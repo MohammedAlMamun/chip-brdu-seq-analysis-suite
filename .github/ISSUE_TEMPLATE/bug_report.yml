@@ -1,0 +1,64 @@
+name: Bug report
+description: Report a reproducible pipeline or plotting defect.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not upload FASTQs, BAMs or confidential experimental information.
+  - type: input
+    id: version
+    attributes:
+      label: Suite version
+      placeholder: v1.0.0-rc1
+    validations:
+      required: true
+  - type: dropdown
+    id: assay
+    attributes:
+      label: Assay
+      options:
+        - ChIP
+        - BrDU
+        - Paired ChIP-BrDU comparison
+    validations:
+      required: true
+  - type: dropdown
+    id: alignment
+    attributes:
+      label: Alignment mode
+      options:
+        - generic
+        - malign
+        - mrdna
+        - Not applicable
+    validations:
+      required: true
+  - type: textarea
+    id: call
+    attributes:
+      label: Function call
+      description: Replace private paths and sample names before posting.
+      render: r
+    validations:
+      required: true
+  - type: textarea
+    id: error
+    attributes:
+      label: Complete error or unexpected result
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include macOS version, R version and relevant package versions.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Include non-sensitive result filenames or manifest rows if useful.

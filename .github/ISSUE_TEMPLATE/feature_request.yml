@@ -1,0 +1,24 @@
+name: Feature request
+description: Propose a focused analysis, visualization or portability improvement.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: Scientific or practical need
+      description: Describe the analysis question or workflow limitation.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Proposed behavior
+      description: Explain expected inputs, outputs and compatibility requirements.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Current workaround

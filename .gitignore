@@ -1,0 +1,27 @@
+# macOS and editor files
+.DS_Store
+._*
+*~
+.Rhistory
+.RData
+.Rproj.user/
+
+# Analysis products and sequencing inputs
+*.fastq
+*.fastq.gz
+*.fq
+*.fq.gz
+*.sam
+*.bam
+*.bai
+*.pdf
+
+# Generated reference indexes are distributed in the complete release bundle.
+chip_brdu_support/reference_genome_index/*
+!chip_brdu_support/reference_genome_index/README.md
+
+# Locally assembled release archives and checksums
+release/
+*.zip
+*.tar.gz
+SHA256SUMS

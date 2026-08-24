@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite the repository and the associated publication when one becomes available."
+title: "ChIP-BrDU Sequencing Analysis Suite"
+type: software
+authors:
+  - family-names: "Al Mamun"
+    given-names: "Mohammed"
+    alias: "MohammedAlMamun"
+repository-code: "https://github.com/MohammedAlMamun/chip-brdu-seq-analysis-suite"
+url: "https://github.com/MohammedAlMamun/chip-brdu-seq-analysis-suite"
+version: "1.0.0-rc1"
+date-released: "2026-08-24"
+keywords:
+  - ChIP-seq
+  - BrDU-seq
+  - genomics
+  - bioinformatics
+  - Saccharomyces cerevisiae

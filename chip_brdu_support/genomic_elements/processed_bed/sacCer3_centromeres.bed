@@ -1,0 +1,17 @@
+chrom	chromStart	chromEnd	name	score	strand	type
+chrI	151524	151525	Centromere	0	.	centromere
+chrII	238265	238266	Centromere	0	.	centromere
+chrIII	114443	114444	Centromere	0	.	centromere
+chrIV	449766	449767	Centromere	0	.	centromere
+chrV	152046	152047	Centromere	0	.	centromere
+chrVI	148569	148570	Centromere	0	.	centromere
+chrVII	496979	496980	Centromere	0	.	centromere
+chrVIII	105645	105646	Centromere	0	.	centromere
+chrIX	355687	355688	Centromere	0	.	centromere
+chrX	436366	436367	Centromere	0	.	centromere
+chrXI	440188	440189	Centromere	0	.	centromere
+chrXII	150888	150889	Centromere	0	.	centromere
+chrXIII	268090	268091	Centromere	0	.	centromere
+chrXIV	628817	628818	Centromere	0	.	centromere
+chrXV	326643	326644	Centromere	0	.	centromere
+chrXVI	556015	556016	Centromere	0	.	centromere
