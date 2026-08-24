@@ -4,6 +4,12 @@
 
 The bundled support data target *Saccharomyces cerevisiae* S288C/sacCer3. `ChIP_BrDU_Project_Paths(check=TRUE)` validates that required files remain beside the main R script.
 
+## Licensing and attribution
+
+The suite's MIT License covers the original software and documentation, not third-party reference or annotation data. SGD-derived material is distributed under CC BY 4.0 and requires attribution to the Saccharomyces Genome Database. Generated Bowtie2 and Rsubread indexes retain the attribution and terms applicable to their source reference sequences.
+
+Supplied and laboratory-curated feature lists retain their documented provenance and any source-specific terms. See [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) before redistributing the complete support bundle.
+
 ## Repository versus release bundle
 
 The Git repository contains the curated genomic-element files and their retained raw sources. Generated Bowtie2 and Rsubread index binaries are intentionally excluded from Git because several exceed GitHub's ordinary file-size limit.

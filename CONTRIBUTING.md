@@ -24,3 +24,7 @@ Open an Issue before a substantial pull request so the scientific behavior, outp
 - backward compatibility of established public arguments where practical.
 
 Do not commit FASTQs, BAMs, sample results, generated reference indexes or other large experimental files.
+
+## Contribution license
+
+By submitting a contribution to this repository, you agree that your contribution may be distributed under the repository's [MIT License](LICENSE). Do not contribute code or data that you do not have permission to redistribute.

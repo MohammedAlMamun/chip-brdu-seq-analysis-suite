@@ -8,6 +8,7 @@ authors:
     alias: "MohammedAlMamun"
 repository-code: "https://github.com/MohammedAlMamun/chip-brdu-seq-analysis-suite"
 url: "https://github.com/MohammedAlMamun/chip-brdu-seq-analysis-suite"
+license: MIT
 version: "1.0.0-rc1"
 date-released: "2026-08-24"
 keywords:

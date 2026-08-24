@@ -146,4 +146,6 @@ Citation metadata is provided in [`CITATION.cff`](CITATION.cff). Detailed annota
 
 ## License
 
-No software license has yet been assigned. Until a license is added, copyright remains with the author and reuse beyond downloading and testing requires permission.
+Original suite software and documentation are released under the [MIT License](LICENSE), copyright © 2026 Mohammed Al Mamun.
+
+The MIT License does not relicense external software, reference sequences, annotations or supplied scientific datasets. See [Third-party notices](THIRD_PARTY_NOTICES.md) and the detailed [support-file provenance](docs/SUPPORT_FILES.md).

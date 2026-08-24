@@ -28,6 +28,10 @@ Yes. Use `y_val` in single-assay plotters that expose it. Paired comparison func
 
 Several generated index files exceed GitHub's ordinary Git limit. Use the complete release ZIP for a runnable installation.
 
+## Should I install the suite from GitHub Packages?
+
+No. GitHub Packages does not provide an R package registry, and this suite is delivered as a transferable folder with R scripts, annotations and generated indexes. Download the versioned complete ZIP from GitHub Releases instead.
+
 ## Is the pipeline suitable for another organism?
 
 Not without adaptation. The current indexes, chromosome conventions and curated element files are specific to S288C/sacCer3.
