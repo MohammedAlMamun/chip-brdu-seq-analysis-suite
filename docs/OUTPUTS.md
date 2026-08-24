@@ -33,7 +33,11 @@ When a peak class is used as an element cohort, windows are centred on the saved
 
 Most report functions generate multi-page PDFs with four standard metric panels per row. Element reports place up to three element rows on a page. Heatmaps use a single, taller element row per page so panels can be reused in publication figures.
 
-The early/late report includes a fourth page containing Early and Late boxplots together in each of the four metric panels. Boxplot outlier symbols are suppressed so extreme points do not visually compress the boxes.
+The early/late report includes a fourth page containing Early and Late boxplots together in each of the four metric panels. Each panel reports a two-sided Wilcoxon rank-sum p-value and its BH adjustment across the four metrics.
+
+The genomic-element boxplot report adds one final page containing all selected curated-element or peak cohorts side by side for `ComparisonMetric`, which defaults to `ratio.ipin.noise` (Clean). Two cohorts receive a two-sided Wilcoxon rank-sum test. Three or more cohorts receive a global Kruskal-Wallis test plus BH-adjusted pairwise Wilcoxon tests; the pairwise table is printed in the PDF for up to six cohorts and is always returned by the function when calculable.
+
+Boxplot outlier symbols are suppressed so extreme points do not visually compress the boxes. Coordinates shared between selected cohorts remain plotted, but are excluded from the statistical tests and reported in the returned result.
 
 ## Complete-analysis report directory
 

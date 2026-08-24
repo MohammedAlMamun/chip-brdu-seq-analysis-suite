@@ -12,7 +12,8 @@ An R-based end-to-end analysis and visualization suite for paired-end *Saccharom
 - Whole-genome, coordinate-defined regional and exact two-repeat rDNA plots.
 - Average enrichment profiles over five calculated peak classes.
 - Average profiles, boxplots and heatmaps for curated genomic elements or calculated peak classes.
-- A focused early-versus-late origin report.
+- Statistical side-by-side boxplot comparisons for selected element or peak cohorts.
+- A focused early-versus-late origin report with comparative boxplot p-values.
 - Paired ChIP–BrDU regional and genomic-element comparisons with separate y-axes.
 - A complete-analysis wrapper that runs primary analysis and the standard downstream report set.
 

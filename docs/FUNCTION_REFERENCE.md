@@ -17,8 +17,8 @@
 | `ChIP_BrDU_rDNA_Plotter()` | 1 or more | collapsed, separated | Profiles and exact feature annotations over the custom two-repeat rDNA reference. |
 | `ChIP_BrDU_Peak_Enrichment_Plotter()` | 1 | collapsed, separated | Average profiles for five saved peak classes. |
 | `ChIP_BrDU_Genomic_Element_Enrichment_Plotter()` | 1 | collapsed, separated | Average profiles for curated features or saved peak classes. |
-| `ChIP_BrDU_Early_Late_Enrichment_Plotter()` | 1 | collapsed, separated | Focused Early/Late report with individual profiles, paired profiles and comparative boxplots. |
-| `ChIP_BrDU_Genomic_Element_Boxplotter()` | 1 | collapsed | Element-centred distributions, defaulting to Early and Late origins. |
+| `ChIP_BrDU_Early_Late_Enrichment_Plotter()` | 1 | collapsed, separated | Focused Early/Late report with individual profiles, paired profiles and comparative boxplots with Wilcoxon p-values. |
+| `ChIP_BrDU_Genomic_Element_Boxplotter()` | 1 | collapsed | Element-centred distributions plus a final single-metric statistical comparison of all selected cohorts. |
 | `ChIP_BrDU_Genomic_Element_Heatmap_Plotter()` | 1 | collapsed | Publication-oriented heatmaps ordered by a selected metric. |
 
 ## Direct ChIP–BrDU comparisons
@@ -56,6 +56,8 @@ Metrics:
 c("ip.score", "ratio.ipin", "ratio.ipnoise", "ratio.ipin.noise")
 ```
 
+The boxplotter's `Metric` argument controls the standard four-panel element pages. Its independent `ComparisonMetric` argument controls the final side-by-side comparison page and defaults to `"ratio.ipin.noise"` (Clean).
+
 Curated element selectors:
 
 ```r
@@ -81,5 +83,7 @@ c(
 - Strand-separated whole-genome profiles are untransformed.
 - Ratio metrics use a raw neutral baseline of 1; after log2 transformation their neutral baseline is 0.
 - Average profiles apply spline smoothing only while drawing the curves.
+- Two boxplot cohorts are compared using a two-sided Wilcoxon rank-sum test. Three or more cohorts use a global Kruskal-Wallis test and BH-adjusted pairwise two-sided Wilcoxon tests.
+- Coordinates shared between selected cohorts remain visible in the boxplots but are excluded from between-cohort statistical tests.
 - ORFs and rDNA are excluded as average-profile cohorts; their architectures require dedicated treatment.
 - Mitochondrial chromosome `chrM` is omitted from element-centred analyses.

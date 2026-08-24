@@ -6528,6 +6528,11 @@ ChIP_BrDU_Genomic_Element_Enrichment_Plotter <- function(
 ## whisker-based y-axis range across every selected element and page. Shared
 ## coordinates remain in their documented element cohorts for plotting but are
 ## excluded from between-cohort statistical tests and reported in the return.
+## One final page places every selected cohort side by side for
+## ComparisonMetric="ratio.ipin.noise" by default. Two cohorts use a two-sided
+## Wilcoxon rank-sum test. Three or more cohorts use a global Kruskal-Wallis
+## test plus pairwise two-sided Wilcoxon tests with BH adjustment; pairwise
+## results are printed when six or fewer cohorts keep the page readable.
 ##
 ## Example:
 ## ChIP_BrDU_Genomic_Element_Boxplotter(
@@ -6536,6 +6541,7 @@ ChIP_BrDU_Genomic_Element_Enrichment_Plotter <- function(
 ##   Alignment="generic",
 ##   Elements=c("EarlyOrigin", "LateOrigin"),
 ##   Metric="all",
+##   ComparisonMetric="ratio.ipin.noise",
 ##   Window=500,
 ##   Log2Values=TRUE
 ## )
@@ -6549,7 +6555,8 @@ ChIP_BrDU_Genomic_Element_Boxplotter <- function(
     Metric="all",
     Window=500,
     Log2Values=TRUE,
-    OutputDir=NULL){
+    OutputDir=NULL,
+    ComparisonMetric="ratio.ipin.noise"){
 
   AllMetrics <- c(
     "ip.score", "ratio.ipin", "ratio.ipnoise", "ratio.ipin.noise"
@@ -6672,6 +6679,18 @@ ChIP_BrDU_Genomic_Element_Boxplotter <- function(
     }
     PlotMetrics <- Metric
   }
+
+  if(!is.character(ComparisonMetric) || length(ComparisonMetric) != 1L ||
+     is.na(ComparisonMetric) || !nzchar(ComparisonMetric) ||
+     !ComparisonMetric %in% AllMetrics){
+    stop(
+      "ComparisonMetric must be one of: ",
+      paste(AllMetrics, collapse=", "),
+      ".",
+      call.=FALSE
+    )
+  }
+  SummaryMetrics <- unique(c(PlotMetrics, ComparisonMetric))
 
   if(length(Window) != 1L || !is.numeric(Window) || !is.finite(Window) ||
      Window < 0 || abs(Window-round(Window)) > sqrt(.Machine$double.eps)){
@@ -7145,7 +7164,7 @@ ChIP_BrDU_Genomic_Element_Boxplotter <- function(
       "chrom", "chromStart", "chromEnd", "elementCenter", "n_bins",
       "shared_between_selected_classes"
     ),
-    measure.vars=PlotMetrics,
+    measure.vars=SummaryMetrics,
     variable.name="metric",
     value.name="raw_value",
     variable.factor=FALSE
@@ -7187,7 +7206,7 @@ ChIP_BrDU_Genomic_Element_Boxplotter <- function(
 
   BoxSummaries <- data.table::rbindlist(
     lapply(
-      PlotMetrics,
+      SummaryMetrics,
       function(metric){
         TargetMetric <- metric
         data.table::rbindlist(
@@ -7242,7 +7261,7 @@ ChIP_BrDU_Genomic_Element_Boxplotter <- function(
 
   YLimits <- setNames(
     lapply(
-      PlotMetrics,
+      SummaryMetrics,
       function(metric){
         TargetMetric <- metric
         WhiskerValues <- unlist(
@@ -7281,7 +7300,7 @@ ChIP_BrDU_Genomic_Element_Boxplotter <- function(
         c(LowerLimit, UpperLimit)
       }
     ),
-    PlotMetrics
+    SummaryMetrics
   )
 
   EmptyStatistics <- data.table::data.table(
@@ -7304,7 +7323,7 @@ ChIP_BrDU_Genomic_Element_Boxplotter <- function(
     ]
     if(length(Elements) == 2L){
       StatisticsRows <- lapply(
-        PlotMetrics,
+        ComparisonMetric,
         function(metric){
           TargetMetric <- metric
           Group1 <- Elements[[1]]
@@ -7325,6 +7344,7 @@ ChIP_BrDU_Genomic_Element_Boxplotter <- function(
               Values1,
               Values2,
               paired=FALSE,
+              alternative="two.sided",
               exact=FALSE
             ))
             TestStatistic <- unname(TestResult$statistic)
@@ -7351,7 +7371,7 @@ ChIP_BrDU_Genomic_Element_Boxplotter <- function(
       )
     } else {
       StatisticsRows <- lapply(
-        PlotMetrics,
+        ComparisonMetric,
         function(metric){
           TargetMetric <- metric
           MetricScores <- TestScores[metric == TargetMetric]
@@ -7411,6 +7431,7 @@ ChIP_BrDU_Genomic_Element_Boxplotter <- function(
                 Values1,
                 Values2,
                 paired=FALSE,
+                alternative="two.sided",
                 exact=FALSE
               ))
               data.table::data.table(
@@ -7465,16 +7486,23 @@ ChIP_BrDU_Genomic_Element_Boxplotter <- function(
     Elements,
     ceiling(seq_along(Elements)/RowsPerPage)
   )
-  PageCount <- length(ElementPages)
+  ElementPageCount <- length(ElementPages)
+  PageCount <- ElementPageCount+1L
   NumberMetrics <- length(PlotMetrics)
-  PdfWidth <- c(`1`=5.2, `2`=7.2, `3`=9.6, `4`=12.0)[[
+  ElementPageWidth <- c(`1`=5.2, `2`=7.2, `3`=9.6, `4`=12.0)[[
     as.character(NumberMetrics)
   ]]
-  PdfHeight <- c(`1`=4.5, `2`=7.2, `3`=10.0)[[
+  ElementPageHeight <- c(`1`=4.5, `2`=7.2, `3`=10.0)[[
     as.character(RowsPerPage)
   ]]
-  PdfWidth <- unname(PdfWidth)
-  PdfHeight <- unname(PdfHeight)
+  ComparisonPageWidth <- if(length(Elements) <= 2L){
+    7.2
+  } else {
+    min(14, max(9.6, 5+1.05*length(Elements)))
+  }
+  ComparisonPageHeight <- if(length(Elements) <= 2L) 7.2 else 10.0
+  PdfWidth <- max(unname(ElementPageWidth), ComparisonPageWidth)
+  PdfHeight <- max(unname(ElementPageHeight), ComparisonPageHeight)
 
   grDevices::pdf(
     OutputFile,
@@ -7570,6 +7598,262 @@ ChIP_BrDU_Genomic_Element_Boxplotter <- function(
     }
     graphics::box(col="gray45", lwd=0.75)
   }
+  FormatPValue <- function(value, label="p"){
+    if(length(value) != 1L || !is.finite(value)){
+      return(paste(label, "unavailable"))
+    }
+    Formatted <- format.pval(value, digits=3, eps=1e-4)
+    if(startsWith(Formatted, "<")){
+      paste(label, Formatted)
+    } else {
+      paste0(label, " = ", Formatted)
+    }
+  }
+  ComparisonValues <- setNames(
+    lapply(
+      Elements,
+      function(element_class){
+        TargetClass <- element_class
+        DisplayScores[
+          element_class == TargetClass &
+          metric == ComparisonMetric &
+          display_finite,
+          display_value
+        ]
+      }
+    ),
+    Elements
+  )
+  ComparisonCounts <- vapply(ComparisonValues, length, integer(1))
+  ComparisonPairRows <- ComparisonStatistics[
+    metric == ComparisonMetric & test == "Pairwise Wilcoxon rank-sum"
+  ]
+  ComparisonPairwiseTablePlotted <-
+    length(Elements) >= 3L && length(Elements) <= 6L &&
+    nrow(ComparisonPairRows) > 0L
+
+  PlotComparisonBox <- function(){
+    TargetMetric <- ComparisonMetric
+    BaseLimits <- YLimits[[TargetMetric]]
+    BaseSpan <- diff(BaseLimits)
+    if(!is.finite(BaseSpan) || BaseSpan <= 0){
+      BaseSpan <- max(1, abs(BaseLimits[[1]]))
+    }
+    ExtraTop <- if(length(Elements) == 2L) 0.22*BaseSpan else 0.11*BaseSpan
+    PlotLimits <- c(BaseLimits[[1]], BaseLimits[[2]]+ExtraTop)
+    ShortLabels <- vapply(Elements, ShortElementClass, character(1))
+    AxisLabels <- paste0(
+      ShortLabels,
+      "\n(n=", ComparisonCounts[Elements], ")"
+    )
+    graphics::boxplot(
+      ComparisonValues,
+      outline=FALSE,
+      ylim=PlotLimits,
+      main=MetricTitles[[TargetMetric]],
+      ylab=DisplayMetricLabel(TargetMetric),
+      names=FALSE,
+      xaxt="n",
+      col=grDevices::adjustcolor(ElementColors[Elements], alpha.f=0.76),
+      border=ElementColors[Elements],
+      boxwex=min(0.60, max(0.34, 2.4/length(Elements))),
+      staplewex=0.66,
+      medlwd=1.8,
+      whisklty=1,
+      whisklwd=1.1,
+      staplelwd=1.1,
+      las=1,
+      cex.axis=0.82,
+      cex.lab=0.92,
+      cex.main=1.02,
+      bty="n"
+    )
+    if(length(Elements) <= 4L){
+      graphics::axis(
+        side=1,
+        at=seq_along(Elements),
+        labels=AxisLabels,
+        las=1,
+        cex.axis=0.78,
+        mgp=c(3, 1.28, 0),
+        tcl=-0.24
+      )
+    } else {
+      graphics::axis(
+        side=1,
+        at=seq_along(Elements),
+        labels=AxisLabels,
+        las=2,
+        cex.axis=0.68,
+        mgp=c(3, 1.05, 0),
+        tcl=-0.22
+      )
+    }
+    Baseline <- MetricBaseline(TargetMetric)
+    if(is.finite(Baseline)){
+      graphics::abline(
+        h=Baseline,
+        col=grDevices::adjustcolor("gray35", alpha.f=0.65),
+        lwd=0.75,
+        lty=2
+      )
+    }
+    if(length(Elements) == 2L){
+      TestRow <- ComparisonStatistics[metric == TargetMetric][1]
+      BracketY <- BaseLimits[[2]]+0.065*BaseSpan
+      BracketTick <- 0.025*BaseSpan
+      graphics::segments(1, BracketY-BracketTick, 1, BracketY, lwd=0.9)
+      graphics::segments(1, BracketY, 2, BracketY, lwd=0.9)
+      graphics::segments(2, BracketY-BracketTick, 2, BracketY, lwd=0.9)
+      graphics::text(
+        1.5,
+        BracketY+0.035*BaseSpan,
+        labels=paste0(
+          "Two-sided Wilcoxon rank-sum: ",
+          FormatPValue(TestRow$p_value[[1]])
+        ),
+        cex=0.76,
+        col="gray28"
+      )
+    } else if(length(Elements) > 2L){
+      GlobalRow <- ComparisonStatistics[
+        metric == TargetMetric & test == "Kruskal-Wallis"
+      ][1]
+      graphics::mtext(
+        paste0(
+          "Global Kruskal-Wallis: ",
+          FormatPValue(GlobalRow$p_value[[1]])
+        ),
+        side=3,
+        line=0.20,
+        cex=0.80,
+        col="gray32"
+      )
+    } else {
+      graphics::mtext(
+        "One cohort selected; a between-group test is not applicable",
+        side=3,
+        line=0.20,
+        cex=0.78,
+        col="gray42"
+      )
+    }
+    graphics::box(col="gray45", lwd=0.75)
+  }
+  PlotComparisonStatistics <- function(){
+    graphics::plot.new()
+    graphics::plot.window(xlim=c(0, 1), ylim=c(0, 1), xaxs="i", yaxs="i")
+    if(ComparisonPairwiseTablePlotted){
+      graphics::text(
+        0.02,
+        0.92,
+        labels="Pairwise two-sided Wilcoxon rank-sum tests (BH-adjusted p-values)",
+        adj=c(0, 0.5),
+        font=2,
+        cex=0.82,
+        col="gray25"
+      )
+      PairLabels <- paste0(
+        vapply(ComparisonPairRows$group_1, ShortElementClass, character(1)),
+        " vs ",
+        vapply(ComparisonPairRows$group_2, ShortElementClass, character(1)),
+        ": ",
+        vapply(
+          ComparisonPairRows$p_adjusted,
+          FormatPValue,
+          character(1),
+          label="BH p"
+        )
+      )
+      NumberColumns <- min(3L, ceiling(length(PairLabels)/5L))
+      RowsPerColumn <- ceiling(length(PairLabels)/NumberColumns)
+      ColumnX <- seq(0.03, 0.97, length.out=NumberColumns+1L)[
+        seq_len(NumberColumns)
+      ]
+      for(ColumnIndex in seq_len(NumberColumns)){
+        FirstIndex <- (ColumnIndex-1L)*RowsPerColumn+1L
+        LastIndex <- min(ColumnIndex*RowsPerColumn, length(PairLabels))
+        if(FirstIndex <= LastIndex){
+          ColumnLabels <- PairLabels[FirstIndex:LastIndex]
+          ColumnY <- seq(0.74, 0.12, length.out=length(ColumnLabels))
+          graphics::text(
+            rep(ColumnX[[ColumnIndex]], length(ColumnLabels)),
+            ColumnY,
+            labels=ColumnLabels,
+            adj=c(0, 0.5),
+            cex=if(length(PairLabels) <= 6L) 0.78 else 0.68,
+            col="gray30"
+          )
+        }
+      }
+    } else {
+      NumberPairs <- nrow(ComparisonPairRows)
+      graphics::text(
+        0.5,
+        0.58,
+        labels=if(length(Elements) > 6L){
+          paste0(
+            NumberPairs,
+            " pairwise BH-adjusted tests were calculated but omitted from the PDF for readability.\n",
+            "The complete table is returned in comparison_statistics."
+          )
+        } else {
+          "Pairwise p-values are unavailable because fewer than two cohorts contain sufficient finite values."
+        },
+        cex=0.78,
+        col="gray42"
+      )
+    }
+  }
+  AddComparisonPageLabels <- function(){
+    graphics::mtext(
+      "Side-by-side genomic-element enrichment comparison",
+      outer=TRUE,
+      side=3,
+      line=1.15,
+      font=2,
+      cex=1.25,
+      col="gray22"
+    )
+    graphics::mtext(
+      paste0(
+        SampleName, " | ", Assay, " | ", Alignment,
+        " | ", ComparisonMetric, " | ",
+        if(Log2Values) "log2 display" else "untransformed display",
+        " | centred window +/-", format(Window, big.mark=","), " bp"
+      ),
+      outer=TRUE,
+      side=3,
+      line=0.05,
+      cex=0.76,
+      col="gray40"
+    )
+    graphics::mtext(
+      paste0(
+        "Outlier points hidden; tests exclude coordinates shared between selected cohorts",
+        if(length(SharedKeys) > 0L){
+          paste0(" (", length(SharedKeys), " shared coordinate",
+                 if(length(SharedKeys) == 1L) "" else "s", ")")
+        } else {
+          ""
+        }
+      ),
+      outer=TRUE,
+      side=1,
+      line=0.82,
+      cex=0.68,
+      col="gray42"
+    )
+    graphics::mtext(
+      paste0("Page ", PageCount, " of ", PageCount),
+      outer=TRUE,
+      side=1,
+      line=0.05,
+      font=3,
+      cex=0.72,
+      col="gray42"
+    )
+  }
   AddPageLabels <- function(page){
     graphics::mtext(
       "Genomic-element enrichment distributions",
@@ -7636,6 +7920,32 @@ ChIP_BrDU_Genomic_Element_Boxplotter <- function(
     AddPageLabels(PageIndex)
   }
 
+  if(length(Elements) > 2L){
+    graphics::layout(
+      matrix(c(1, 2), nrow=2, byrow=TRUE),
+      heights=c(3.25, 1.45)
+    )
+    graphics::par(
+      oma=c(2.45, 0.85, 3.65, 0.65),
+      mar=c(if(length(Elements) > 4L) 6.55 else 4.25, 4.45, 2.35, 0.85),
+      mgp=c(2.35, 0.72, 0),
+      tcl=-0.22
+    )
+    PlotComparisonBox()
+    graphics::par(mar=c(0.35, 0.85, 0.15, 0.85))
+    PlotComparisonStatistics()
+  } else {
+    graphics::layout(matrix(1L, nrow=1L, ncol=1L))
+    graphics::par(
+      oma=c(2.45, 0.85, 3.65, 0.65),
+      mar=c(4.85, 4.55, 2.75, 1.05),
+      mgp=c(2.45, 0.82, 0),
+      tcl=-0.22
+    )
+    PlotComparisonBox()
+  }
+  AddComparisonPageLabels()
+
   grDevices::dev.off(which=PdfDevice)
   message("Genomic-element boxplot report saved: ", OutputFile)
 
@@ -7648,6 +7958,7 @@ ChIP_BrDU_Genomic_Element_Boxplotter <- function(
     strand_mode="collapsed",
     elements=Elements,
     metrics=PlotMetrics,
+    comparison_metric=ComparisonMetric,
     window=Window,
     step=Step,
     bin_width=BinWidth,
@@ -7670,6 +7981,7 @@ ChIP_BrDU_Genomic_Element_Boxplotter <- function(
     y_limits=YLimits,
     shared_coordinates=SharedCoordinates,
     comparison_statistics=ComparisonStatistics,
+    comparison_pairwise_table_plotted=ComparisonPairwiseTablePlotted,
     excluded_annotations=c("ORF", "rDNA"),
     chromosomes=NuclearChromosomes,
     chrM_excluded=TRUE,
@@ -7680,10 +7992,12 @@ ChIP_BrDU_Genomic_Element_Boxplotter <- function(
     individual_points_plotted=FALSE,
     y_axis_basis="shared within each metric across selected elements; whiskers plus metric baseline",
     page_count=PageCount,
+    element_page_count=ElementPageCount,
     rows_per_page=RowsPerPage,
     page_layout=paste0(
       RowsPerPage, " element row(s) x ", NumberMetrics,
-      " metric column(s); maximum three element rows per page"
+      " metric column(s); maximum three element rows per page; one final ",
+      "side-by-side ", ComparisonMetric, " comparison page"
     ),
     primary_ratio_output_only=TRUE,
     annotation_source="project-local processed genomic-element BED files and/or sample-specific primary-analysis peak BED files",
@@ -7703,7 +8017,12 @@ ChIP_BrDU_Genomic_Element_Boxplotter <- function(
       log_transformation=Log2Values,
       outlier_points_hidden=TRUE,
       individual_points_hidden=TRUE,
-      shared_metric_y_scale=TRUE
+      shared_metric_y_scale=TRUE,
+      side_by_side_comparison_page=TRUE,
+      two_group_wilcoxon_rank_sum=length(Elements) == 2L,
+      multi_group_kruskal_wallis=length(Elements) > 2L,
+      pairwise_wilcoxon_bh_adjustment=length(Elements) > 2L,
+      shared_coordinates_excluded_from_tests=TRUE
     )
   ))
 }
@@ -11389,6 +11708,9 @@ ChIP_BrDU_Primary_Analysis <- function(  Input_R1 = "/full/path/to/file_R1.fastq
 ##      and Late per-origin boxplots. Each origin contributes its arithmetic
 ##      mean within +/-Window; outlier dots are hidden. For a strand-separated
 ##      report, page 4 reads the saved collapsed primary-analysis ratio table.
+##      Each panel reports a two-sided Wilcoxon rank-sum p-value and its BH
+##      adjustment across the four metrics. Coordinates present in both Early
+##      and Late lists remain plotted but are excluded from the tests.
 ##
 ## Example:
 ## ChIP_BrDU_Early_Late_Enrichment_Plotter(
@@ -11913,9 +12235,42 @@ ChIP_BrDU_Early_Late_Enrichment_Plotter <- function(
     list(n_bins=sum(!is.na(ip.score))),
     lapply(.SD, MeanOrNA)
   ), by=.(origin_class, origin_id), .SDcols=Metrics]
+  OriginMembership <- data.table::rbindlist(
+    lapply(
+      OriginClasses,
+      function(origin_class){
+        TargetClass <- origin_class
+        OriginTable <- Origins[[TargetClass]]
+        data.table::data.table(
+          origin_class=TargetClass,
+          origin_id=seq_len(nrow(OriginTable)),
+          origin_key=paste(
+            OriginTable$chrom,
+            OriginTable$chromStart,
+            OriginTable$chromEnd,
+            sep=":"
+          )
+        )
+      }
+    ),
+    use.names=TRUE
+  )
+  SharedOriginKeys <- OriginMembership[, .(
+    n_classes=data.table::uniqueN(origin_class)
+  ), by=origin_key][n_classes > 1L, origin_key]
+  OriginMembership[
+    , shared_between_origin_classes := origin_key %in% SharedOriginKeys
+  ]
+  OriginBoxScores <- OriginMembership[
+    OriginBoxScores,
+    on=.(origin_class, origin_id)
+  ]
   OriginBoxDisplayScores <- data.table::melt(
     OriginBoxScores,
-    id.vars=c("origin_class", "origin_id", "n_bins"),
+    id.vars=c(
+      "origin_class", "origin_id", "origin_key", "n_bins",
+      "shared_between_origin_classes"
+    ),
     measure.vars=Metrics,
     variable.name="metric",
     value.name="raw_value",
@@ -11937,6 +12292,58 @@ ChIP_BrDU_Early_Late_Enrichment_Plotter <- function(
     ]
   }
   OriginBoxDisplayScores[, display_finite := is.finite(display_value)]
+  OriginComparisonStatistics <- data.table::rbindlist(
+    lapply(
+      Metrics,
+      function(metric){
+        TargetMetric <- metric
+        EarlyValues <- OriginBoxDisplayScores[
+          metric == TargetMetric &
+          origin_class == "EarlyOrigin" &
+          display_finite &
+          !shared_between_origin_classes,
+          display_value
+        ]
+        LateValues <- OriginBoxDisplayScores[
+          metric == TargetMetric &
+          origin_class == "LateOrigin" &
+          display_finite &
+          !shared_between_origin_classes,
+          display_value
+        ]
+        if(length(EarlyValues) < 2L || length(LateValues) < 2L){
+          TestStatistic <- NA_real_
+          PValue <- NA_real_
+        } else {
+          TestResult <- suppressWarnings(stats::wilcox.test(
+            EarlyValues,
+            LateValues,
+            paired=FALSE,
+            alternative="two.sided",
+            exact=FALSE
+          ))
+          TestStatistic <- unname(TestResult$statistic)
+          PValue <- TestResult$p.value
+        }
+        data.table::data.table(
+          metric=TargetMetric,
+          test="Wilcoxon rank-sum",
+          alternative="two.sided",
+          n_early=length(EarlyValues),
+          n_late=length(LateValues),
+          statistic=TestStatistic,
+          p_value=PValue,
+          p_adjust_method="BH",
+          p_adjusted=NA_real_,
+          shared_coordinates_excluded=length(SharedOriginKeys)
+        )
+      }
+    ),
+    use.names=TRUE
+  )
+  OriginComparisonStatistics[
+    , p_adjusted := stats::p.adjust(p_value, method="BH")
+  ]
   OriginBoxSummaries <- data.table::rbindlist(
     lapply(
       Metrics,
@@ -12034,6 +12441,18 @@ ChIP_BrDU_Early_Late_Enrichment_Plotter <- function(
     ),
     Metrics
   )
+
+  FormatPValue <- function(value, label="p"){
+    if(length(value) != 1L || !is.finite(value)){
+      return(paste(label, "unavailable"))
+    }
+    Formatted <- format.pval(value, digits=3, eps=1e-4)
+    if(startsWith(Formatted, "<")){
+      paste(label, Formatted)
+    } else {
+      paste0(label, " = ", Formatted)
+    }
+  }
 
   TransformProfileForDisplay <- function(values){
     values <- suppressWarnings(as.numeric(values))
@@ -12385,6 +12804,19 @@ ChIP_BrDU_Early_Late_Enrichment_Plotter <- function(
       mgp=c(3, 1.40, 0),
       tcl=-0.28
     )
+    TestRow <- OriginComparisonStatistics[metric == TargetMetric][1]
+    graphics::mtext(
+      paste0(
+        "Two-sided Wilcoxon: ",
+        FormatPValue(TestRow$p_value[[1]]),
+        "; ",
+        FormatPValue(TestRow$p_adjusted[[1]], label="BH p")
+      ),
+      side=3,
+      line=0.12,
+      cex=0.70,
+      col="gray32"
+    )
     Baseline <- if(TargetMetric == "ip.score"){
       NA_real_
     } else if(Log2Profile){
@@ -12611,6 +13043,19 @@ ChIP_BrDU_Early_Late_Enrichment_Plotter <- function(
     col="gray40"
   )
   graphics::mtext(
+    paste0(
+      "Two-sided Wilcoxon rank-sum; BH adjustment across four metrics; ",
+      length(SharedOriginKeys), " shared E/L coordinate",
+      if(length(SharedOriginKeys) == 1L) "" else "s",
+      " excluded from tests"
+    ),
+    side=1,
+    line=1.62,
+    outer=TRUE,
+    cex=0.64,
+    col="gray42"
+  )
+  graphics::mtext(
     "Page 4 of 4",
     side=1,
     line=0,
@@ -12675,6 +13120,8 @@ ChIP_BrDU_Early_Late_Enrichment_Plotter <- function(
     boxplot_display_scores=OriginBoxDisplayScores,
     boxplot_summaries=OriginBoxSummaries,
     boxplot_y_limits=OriginBoxYLimits,
+    boxplot_comparison_statistics=OriginComparisonStatistics,
+    boxplot_shared_coordinates_excluded=SharedOriginKeys,
     boxplot_statistic="arithmetic mean of final saved collapsed metric values within origin-midpoint window",
     boxplot_outlier_points_plotted=FALSE,
     metrics=Metrics,
@@ -12706,7 +13153,10 @@ ChIP_BrDU_Early_Late_Enrichment_Plotter <- function(
       log_transformation=Log2Profile,
       separated_log1p=StrandMode == "separated" && Log2Profile,
       collapsed_early_late_boxplots=TRUE,
-      boxplot_outlier_points_hidden=TRUE
+      boxplot_outlier_points_hidden=TRUE,
+      boxplot_wilcoxon_rank_sum=TRUE,
+      boxplot_bh_adjustment_across_metrics=TRUE,
+      boxplot_shared_coordinates_excluded_from_tests=TRUE
     )
   ))
 }

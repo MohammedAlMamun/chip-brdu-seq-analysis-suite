@@ -102,7 +102,8 @@ ChIP_BrDU_Genomic_Element_Boxplotter( SampleDir=CHIP_SAMPLE_DIR,
                                       Elements=c("EarlyOrigin", "LateOrigin"),
                                       Metric="all",
                                       Window=500,
-                                      Log2Values=TRUE )
+                                      Log2Values=TRUE,
+                                      ComparisonMetric="ratio.ipin.noise" )
 
 ChIP_BrDU_Genomic_Element_Heatmap_Plotter( SampleDir=CHIP_SAMPLE_DIR,
                                            Assay="ChIP",
@@ -192,7 +193,8 @@ ChIP_BrDU_Genomic_Element_Boxplotter( SampleDir=BRDU_SAMPLE_DIR,
                                       Elements=c("EarlyOrigin", "LateOrigin"),
                                       Metric="all",
                                       Window=500,
-                                      Log2Values=TRUE )
+                                      Log2Values=TRUE,
+                                      ComparisonMetric="ratio.ipin.noise" )
 
 ChIP_BrDU_Genomic_Element_Heatmap_Plotter( SampleDir=BRDU_SAMPLE_DIR,
                                            Assay="BrDU",
