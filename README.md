@@ -35,7 +35,7 @@ For routine analysis, use the release ZIP and keep its internal folder structure
 
 The release candidate targets laboratory macOS computers with `ngsAnalyser.app` installed under `/Applications/ngsAnalyser.app`. The primary workflow uses the Bowtie2, Samtools and Bedtools executables supplied by that application.
 
-The R workflow uses packages from CRAN and Bioconductor, including `data.table`, `tidyverse`, `Rsubread`, `ShortRead`, `csaw`, `GenomicAlignments`, `IRanges`, `ORFik`, `BSgenome.Scerevisiae.UCSC.sacCer3`, `readxl`, `gridExtra`, `plotrix`, `viridisLite` and the other packages loaded by the primary-analysis function.
+The R workflow uses packages from CRAN and Bioconductor, including `data.table`, `tidyverse`, `Rsubread`, `ShortRead`, `csaw`, `GenomicAlignments`, `IRanges`, `ORFik`, `BSgenome.Scerevisiae.UCSC.sacCer3`, `gridExtra`, `plotrix`, `viridisLite` and the other packages loaded by the primary-analysis function.
 
 Inputs are paired-end FASTQ files for:
 

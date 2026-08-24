@@ -4,8 +4,9 @@ ChIP-seq and BrDU-seq support data: sacCer3 / S288C
 Purpose
 -------
 This directory documents the genomic features used by the combined ChIP-seq and
-BrDU-seq analysis project. Original inputs are retained separately from the
-analysis-ready BED files so that every conversion remains auditable.
+BrDU-seq analysis project. The distributable bundle contains only the
+analysis-ready BED files; source provenance and conversion details are retained
+in this document.
 
 Directory layout
 ----------------
@@ -13,7 +14,6 @@ chip_brdu_support/
   reference_genome_index/       Bowtie2 and Rsubread reference/index files
   genomic_elements/
     README_annotations.txt      This documentation
-    raw_sources/                Untouched source workbooks and legacy BED files
     processed_bed/              Analysis-ready sacCer3 genomic-feature files
 
 Recommended paths in the future R project
@@ -35,20 +35,23 @@ Coordinate and schema conventions
   boundary (for example, 1/2 and 2/2).
 - sacCer3_ARS.bed adds an eighth column, stat, to preserve the supplied early,
   late, or null classification.
-- The four Excel sources used 1-based closed coordinates. Their processed BED
-  files therefore use chromStart = Start - 1 and chromEnd = End.
-- E_Rep.bed, L_Rep.bed, and OriginList_Full.bed were already BED-style; their
-  coordinates were preserved exactly while standard columns were added.
-- Raw source files were not edited.
+- The four collaborator-supplied SGD coordinate lists used 1-based closed
+  coordinates. Their processed BED files therefore use chromStart = Start - 1
+  and chromEnd = End.
+- The supplied E_Rep, L_Rep, and OriginList_Full tables were already BED-style;
+  their coordinates were preserved exactly while standard columns were added.
+- The source workbooks and legacy BED tables are not redistributed. The
+  processed BED files below and this audit record are retained.
 
 Analysis-ready files
 --------------------
 Previously prepared annotations:
-- sacCer3_S288C_ORFs.bed: 6,692 supplied ORFs in headerless BED6 format.
-- sacCer3_TER.bed: 71 termination regions plus a BED7 header.
-- sacCer3_TyElements.bed: 433 Ty/LTR features plus a BED7 header.
-- sacCer3_tRNAs.bed: 299 tRNA features plus a BED7 header.
-- sacCer3_centromeres.bed: 16 centromeres plus a BED7 header.
+- sacCer3_S288C_ORFs.bed: 6,692 SGD-derived ORFs in headerless BED6 format.
+- sacCer3_TER.bed: 71 termination regions from a collaborator-supplied SGD
+  list, plus a BED7 header.
+- sacCer3_TyElements.bed: 433 SGD-derived Ty/LTR features plus a BED7 header.
+- sacCer3_tRNAs.bed: 299 SGD-derived tRNA features plus a BED7 header.
+- sacCer3_centromeres.bed: 16 SGD-derived centromeres plus a BED7 header.
 
 Newly processed annotations:
 - Scer_2xrDNA_unit_Elements.bed: exact architecture of the custom 18,274-bp
@@ -57,34 +60,52 @@ Newly processed annotations:
   NTS1/NTS2; rARS and its ACS; and the canonical RFB interval. Custom copy 2
   is an exact +9,137-bp duplication of custom copy 1, matching RDNAx2.fasta;
   it is not an annotation of the native second repeat represented in SGD.
-- sacCer3_CONVERGENT.bed: 1,312 convergent regions from
-  CONVERGENT_list.xlsx; strand is not applicable (.).
-- sacCer3_DIVERGENT.bed: 1,328 divergent regions from
-  DIVERGENT_list.xlsx; strand is not applicable (.).
-- sacCer3_CTrans.bed: 1,220 Crick-strand transcribed regions from
-  CTrans_list.xlsx; strand is -.
-- sacCer3_WTrans.bed: 1,245 Watson-strand transcribed regions from
-  WTrans_list.xlsx; strand is +.
-- sacCer3_EarlyFiringOrigins.bed: 147 records copied from E_Rep.bed and labeled
-  early_firing_origin.
-- sacCer3_LateFiringOrigins.bed: 83 records copied from L_Rep.bed and labeled
+- sacCer3_CONVERGENT.bed: 1,312 convergent regions from a
+  collaborator-supplied SGD coordinate list; strand is not applicable (.).
+- sacCer3_DIVERGENT.bed: 1,328 divergent regions from a
+  collaborator-supplied SGD coordinate list; strand is not applicable (.).
+- sacCer3_CTrans.bed: 1,220 Crick-strand transcribed regions from a
+  collaborator-supplied SGD coordinate list; strand is -.
+- sacCer3_WTrans.bed: 1,245 Watson-strand transcribed regions from a
+  collaborator-supplied SGD coordinate list; strand is +.
+- sacCer3_EarlyFiringOrigins.bed: 147 records from the E_Rep dataset and
+  labeled early_firing_origin.
+- sacCer3_LateFiringOrigins.bed: 83 records from the L_Rep dataset and labeled
   late_firing_origin.
-- sacCer3_ARS.bed: 409 ARS records copied from OriginList_Full.bed. The stat
-  column contains 142 early, 73 late, and 194 null classifications.
+- sacCer3_ARS.bed: 409 confirmed-origin records from the OriginList_Full oriDB
+  dataset. The stat column contains 142 early, 73 late, and 194 null
+  classifications.
+
+Feature-list provenance
+-----------------------
+- E_Rep and L_Rep were obtained from Fachinetti et al. (2010), "Replication
+  termination at eukaryotic chromosomes is mediated by Top2 and occurs at
+  genomic loci containing pausing elements," Molecular Cell 39:595-605.
+  DOI: https://doi.org/10.1016/j.molcel.2010.07.024
+- OriginList_Full contains confirmed origins obtained from oriDB, the DNA
+  replication origin database: https://cerevisiae.oridb.org/ . The exact
+  historical snapshot/download date was not retained.
+- The ORF, TER, Ty/LTR, tRNA, centromere, convergent, divergent,
+  Crick-transcribed, and Watson-transcribed source tables were obtained or
+  derived from the Saccharomyces Genome Database (SGD):
+  https://www.yeastgenome.org/ . The TER and four transcription-related lists
+  were shared by a collaborator. The exact historical snapshots for these
+  supplied lists were not retained, and the raw collaborator files are not
+  redistributed.
 
 Known source inconsistencies (preserved, not silently corrected)
 ---------------------------------------------------------------
-The independent origin files are not exact partitions of OriginList_Full.bed.
+The independent origin datasets are not exact partitions of OriginList_Full.
 Downstream code should choose an explicit authority rather than assuming that
 the three files reconcile automatically.
 
-E_Rep.bed contains four unnamed intervals absent from OriginList_Full.bed:
+E_Rep contains four unnamed intervals absent from OriginList_Full:
 - chrVIII  115683-117257
 - chrXII   139293-140447
 - chrXV    463698-464877
 - chrXVI   552403-554287
 
-L_Rep.bed contains ten unnamed intervals absent from OriginList_Full.bed:
+L_Rep contains ten unnamed intervals absent from OriginList_Full:
 - chrII    810493-813067
 - chrIV    1530848-1531802
 - chrVII   23-778
@@ -96,8 +117,8 @@ L_Rep.bed contains ten unnamed intervals absent from OriginList_Full.bed:
 - chrXIV   781453-784287
 - chrXV    1089998-1091252
 
-ARS1516 (chrXV:566409-566643) occurs in both E_Rep.bed and L_Rep.bed, while
-OriginList_Full.bed labels it late. Each processed file preserves its own source.
+ARS1516 (chrXV:566409-566643) occurs in both E_Rep and L_Rep, while
+OriginList_Full labels it late. Each processed file preserves its own source.
 
 rDNA annotation provenance
 --------------------------
@@ -135,7 +156,6 @@ rDNA annotation provenance
 Naming strategy
 ---------------
 Processed filenames begin with sacCer3_, followed by a stable descriptive
-feature name, and end in .bed. Raw filenames remain unchanged for provenance.
-The custom rDNA annotation instead begins with its reference sequence name,
-Scer_2xrDNA_unit_, because its coordinates are not chromosome-level sacCer3
-coordinates.
+feature name, and end in .bed. The custom rDNA annotation instead begins with
+its reference sequence name, Scer_2xrDNA_unit_, because its coordinates are not
+chromosome-level sacCer3 coordinates.

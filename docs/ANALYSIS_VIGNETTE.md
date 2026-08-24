@@ -141,11 +141,11 @@ ChIP_BrDU_Project_Paths(check=TRUE)
 
 | Argument | Default | Explanation |
 |---|---:|---|
-| `check` | `TRUE` | When `TRUE`, verifies the required support directories, reference files, indexes, processed BED files, and retained raw source files. Use `FALSE` only to inspect the resolved path list without enforcing completeness. |
+| `check` | `TRUE` | When `TRUE`, verifies the required support directories, reference files, indexes, and processed BED files. Use `FALSE` only to inspect the resolved path list without enforcing completeness. |
 
 ### Result
 
-Returns a named list containing the main-script path, project and support directories, reference-index paths, processed genomic-element paths, and retained source-file paths. With `check=TRUE`, an incomplete or incorrectly arranged bundle stops with a list of missing items.
+Returns a named list containing the main-script path, project and support directories, reference-index paths, and processed genomic-element paths. With `check=TRUE`, an incomplete or incorrectly arranged bundle stops with a list of missing items.
 
 ### Example
 

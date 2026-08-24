@@ -4,17 +4,7 @@ All notable changes to this project will be documented here.
 
 ## [Unreleased]
 
-### Added
-
-- MIT licensing for original software and documentation, with explicit third-party data and dependency notices.
-- A complete user vignette covering every public function, every argument, outputs, and practical call examples.
-- Two-sided Wilcoxon rank-sum and across-metric BH-adjusted p-values on the dedicated Early/Late boxplot page.
-- A final single-metric side-by-side page in the genomic-element boxplot report, with `ComparisonMetric="ratio.ipin.noise"` by default.
-- Global Kruskal-Wallis and BH-adjusted pairwise Wilcoxon results when more than two element or peak cohorts are compared.
-
-### Changed
-
-- Coordinates shared between selected cohorts are retained in boxplot displays but excluded from between-cohort tests and explicitly reported.
+No changes recorded after the current release candidate.
 
 ## [1.0.0-rc1] - 2026-08-24
 
@@ -32,6 +22,17 @@ All notable changes to this project will be documented here.
 - Five calculated peak classes usable as element cohorts.
 - Transferable script-relative support-path resolution.
 - Five-block laboratory run script.
+- MIT licensing for original software and documentation, with explicit third-party data and dependency notices.
+- A complete user vignette covering every public function, every argument, outputs, and practical call examples.
+- Two-sided Wilcoxon rank-sum and across-metric BH-adjusted p-values on the dedicated Early/Late boxplot page.
+- A final single-metric side-by-side page in the genomic-element boxplot report, with `ComparisonMetric="ratio.ipin.noise"` by default.
+- Global Kruskal-Wallis and BH-adjusted pairwise Wilcoxon results when more than two element or peak cohorts are compared.
+
+### Changed
+
+- Coordinates shared between selected cohorts are retained in boxplot displays but excluded from between-cohort tests and explicitly reported.
+- Redundant raw genomic-feature inputs are no longer redistributed; the workflow uses canonical processed BED files and creates temporary headerless origin views for legacy peak intersections.
+- Support-file provenance now identifies Fachinetti et al. early/late origins, the oriDB confirmed-origin collection, and SGD-derived genomic annotations.
 
 ### Release-candidate limitations
 

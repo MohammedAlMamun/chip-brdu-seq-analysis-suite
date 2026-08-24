@@ -12,6 +12,10 @@ Reference and annotation material obtained or derived from the Saccharomyces Gen
 
 The bundled custom rDNA FASTA and annotation are derived from the documented S288C reference interval and include an exact duplicated custom repeat. Redistribution or adaptation of SGD-derived material must preserve the required source attribution.
 
+## oriDB material
+
+The bundled `sacCer3_ARS.bed` contains a processed set of confirmed origins obtained from [oriDB, the DNA replication origin database](https://cerevisiae.oridb.org/). The exact historical snapshot date was not retained. Users should cite [*OriDB, the DNA replication origin database updated and extended*](https://academic.oup.com/nar/article/40/D1/D682/2903073) and the relevant underlying origin studies where appropriate.
+
 ## Generated reference indexes
 
 The complete release bundle contains generated Bowtie2 and Rsubread index files derived from the bundled reference sequences. These index artifacts are provided for reproducible execution of the suite and remain subject to the applicable terms and attribution requirements of their source reference data.
@@ -24,8 +28,8 @@ The primary workflow calls executables supplied by the separately installed `ngs
 
 Users and redistributors are responsible for complying with the licenses of their installed external dependencies.
 
-## Supplied and laboratory-curated genomic feature files
+## Processed genomic feature files
 
-The support folder also preserves supplied or laboratory-curated feature lists and their processed derivatives. Their provenance, coordinate transformations and preserved source inconsistencies are documented in [`chip_brdu_support/genomic_elements/README_annotations.txt`](chip_brdu_support/genomic_elements/README_annotations.txt).
+The support folder includes processed feature lists obtained or derived from SGD, the confirmed-origin collection in oriDB, and Fachinetti et al. (2010), DOI [10.1016/j.molcel.2010.07.024](https://doi.org/10.1016/j.molcel.2010.07.024). Their provenance, coordinate transformations and preserved source inconsistencies are documented in [`chip_brdu_support/genomic_elements/README_annotations.txt`](chip_brdu_support/genomic_elements/README_annotations.txt). Redundant raw collaborator workbooks and legacy source tables are not redistributed.
 
 Unless a file is identified as original suite software or documentation, inclusion in the repository does not assert that the file has been relicensed under MIT. Redistribution must follow the terms of its original source and any applicable institutional or collaborator agreement.

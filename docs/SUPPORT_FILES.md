@@ -8,11 +8,11 @@ The bundled support data target *Saccharomyces cerevisiae* S288C/sacCer3. `ChIP_
 
 The suite's MIT License covers the original software and documentation, not third-party reference or annotation data. SGD-derived material is distributed under CC BY 4.0 and requires attribution to the Saccharomyces Genome Database. Generated Bowtie2 and Rsubread indexes retain the attribution and terms applicable to their source reference sequences.
 
-Supplied and laboratory-curated feature lists retain their documented provenance and any source-specific terms. See [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) before redistributing the complete support bundle.
+Processed feature lists retain their documented provenance and any source-specific terms. The redundant raw source tables are not redistributed. See [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) before redistributing the complete support bundle.
 
 ## Repository versus release bundle
 
-The Git repository contains the curated genomic-element files and their retained raw sources. Generated Bowtie2 and Rsubread index binaries are intentionally excluded from Git because several exceed GitHub's ordinary file-size limit.
+The Git repository contains the curated, analysis-ready genomic-element files. Generated Bowtie2 and Rsubread index binaries are intentionally excluded from Git because several exceed GitHub's ordinary file-size limit.
 
 The complete release ZIP supplies `chip_brdu_support/reference_genome_index` with:
 
@@ -26,9 +26,9 @@ Do not attempt primary analysis from a source-only clone until this directory ha
 
 ## Curated genomic elements
 
-The analysis-ready BED files cover ORFs, ARSs, Early and Late origins, termination regions, Ty/LTR elements, tRNAs, centromeres, convergent/divergent regions, Watson/Crick transcribed regions and the exact two-repeat rDNA architecture.
+The analysis-ready BED files cover SGD-derived ORFs, termination regions, Ty/LTR elements, tRNAs, centromeres, convergent/divergent regions and Watson/Crick transcribed regions; confirmed origins obtained from oriDB; Fachinetti et al. early/late origin lists; and the exact two-repeat rDNA architecture.
 
-Processed nuclear coordinates use BED convention: zero-based `chromStart` and half-open `chromEnd`. The retained raw sources remain unchanged.
+Processed nuclear coordinates use BED convention: zero-based `chromStart` and half-open `chromEnd`. Source attribution and coordinate transformations are preserved in the annotation documentation rather than by redistributing redundant raw tables.
 
 ## rDNA reference
 

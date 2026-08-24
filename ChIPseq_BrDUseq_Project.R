@@ -52,7 +52,6 @@ ChIP_BrDU_Project_Paths <- function(check=TRUE){
   SupportDir <- file.path(ProjectDir, "chip_brdu_support")
   ReferenceGenomeIndexDir <- file.path(SupportDir, "reference_genome_index")
   GenomicElementsDir <- file.path(SupportDir, "genomic_elements")
-  RawSourcesDir <- file.path(GenomicElementsDir, "raw_sources")
   ProcessedBedDir <- file.path(GenomicElementsDir, "processed_bed")
 
   Indexes <- list(
@@ -79,29 +78,15 @@ ChIP_BrDU_Project_Paths <- function(check=TRUE){
     watson_transcribed_regions=file.path(ProcessedBedDir, "sacCer3_WTrans.bed")
   )
 
-  ## Legacy origin files remain the compatibility inputs for existing bedtools
-  ## peak-intersection code because E_Rep.bed and L_Rep.bed are headerless BED6.
-  SourceFiles <- list(
-    all_origins=file.path(RawSourcesDir, "OriginList_Full.bed"),
-    early_origins=file.path(RawSourcesDir, "E_Rep.bed"),
-    late_origins=file.path(RawSourcesDir, "L_Rep.bed"),
-    convergent_regions=file.path(RawSourcesDir, "CONVERGENT_list.xlsx"),
-    divergent_regions=file.path(RawSourcesDir, "DIVERGENT_list.xlsx"),
-    crick_transcribed_regions=file.path(RawSourcesDir, "CTrans_list.xlsx"),
-    watson_transcribed_regions=file.path(RawSourcesDir, "WTrans_list.xlsx")
-  )
-
   Paths <- list(
     main_script=.ChIPBrDU_Main_Script,
     project_dir=ProjectDir,
     support_dir=SupportDir,
     reference_genome_index_dir=ReferenceGenomeIndexDir,
     genomic_elements_dir=GenomicElementsDir,
-    raw_sources_dir=RawSourcesDir,
     processed_bed_dir=ProcessedBedDir,
     indexes=Indexes,
-    elements=Elements,
-    source_files=SourceFiles
+    elements=Elements
   )
 
   if(isTRUE(check)){
@@ -109,7 +94,6 @@ ChIP_BrDU_Project_Paths <- function(check=TRUE){
       SupportDir,
       ReferenceGenomeIndexDir,
       GenomicElementsDir,
-      RawSourcesDir,
       ProcessedBedDir
     )
     MissingDirectories <- RequiredDirectories[!dir.exists(RequiredDirectories)]
@@ -124,8 +108,7 @@ ChIP_BrDU_Project_Paths <- function(check=TRUE){
       Indexes$s288c_fasta,
       Indexes$rdna_fasta
     )
-    RequiredFiles <- c(IndexFiles, unlist(Elements, use.names=FALSE),
-                       unlist(SourceFiles, use.names=FALSE))
+    RequiredFiles <- c(IndexFiles, unlist(Elements, use.names=FALSE))
     MissingFiles <- RequiredFiles[!file.exists(RequiredFiles)]
 
     if(length(MissingDirectories) > 0 || length(MissingFiles) > 0){
@@ -9256,14 +9239,60 @@ ChIP_BrDU_Primary_Analysis <- function(  Input_R1 = "/full/path/to/file_R1.fastq
   packages <- c("basicPlotteR", "plyr", "tidyverse", "dplyr", "plotrix", "rasterpdf", "imager",
                 "VennDiagram", "grid", "gridBase", "gridExtra", "ShortRead", "csaw", "shiny",
                 "BSgenome.Scerevisiae.UCSC.sacCer3", "Rsubread", "GenomicAlignments",
-                "IRanges", "readxl", "data.table", "ORFik")
+                "IRanges", "data.table", "ORFik")
 
   suppressWarnings(suppressPackageStartupMessages(lapply(packages, require, character.only = TRUE)))
 
   SupportPaths <- ChIP_BrDU_Project_Paths(check=TRUE)
-  All_Ori_Link <- SupportPaths$source_files$all_origins
-  E_Ori_Link <- SupportPaths$source_files$early_origins
-  L_Ori_Link <- SupportPaths$source_files$late_origins
+
+  ## The distributable bundle retains one canonical processed BED per feature.
+  ## Peak intersections historically consumed headerless legacy origin tables,
+  ## so make equivalent temporary views from the processed BEDs on demand.
+  make_origin_intersection_bed <- function(SourceFile, Columns, Label){
+    OriginTable <- utils::read.delim(
+      SourceFile,
+      header=TRUE,
+      stringsAsFactors=FALSE,
+      check.names=FALSE
+    )
+    MissingColumns <- setdiff(Columns, names(OriginTable))
+    if(length(MissingColumns) > 0){
+      stop(
+        Label, " support BED is missing column(s): ",
+        paste(MissingColumns, collapse=", "),
+        call.=FALSE
+      )
+    }
+
+    TemporaryBed <- tempfile(pattern=paste0(Label, "_"), fileext=".bed")
+    utils::write.table(
+      OriginTable[, Columns, drop=FALSE],
+      file=TemporaryBed,
+      quote=FALSE,
+      row.names=FALSE,
+      col.names=FALSE,
+      sep="\t",
+      na=""
+    )
+    TemporaryBed
+  }
+
+  All_Ori_Link <- make_origin_intersection_bed(
+    SupportPaths$elements$ars,
+    c("chrom", "chromStart", "chromEnd", "name", "stat"),
+    "all_origins"
+  )
+  E_Ori_Link <- make_origin_intersection_bed(
+    SupportPaths$elements$early_origins,
+    c("chrom", "chromStart", "chromEnd", "name", "score", "strand"),
+    "early_origins"
+  )
+  L_Ori_Link <- make_origin_intersection_bed(
+    SupportPaths$elements$late_origins,
+    c("chrom", "chromStart", "chromEnd", "name", "score", "strand"),
+    "late_origins"
+  )
+  on.exit(unlink(c(All_Ori_Link, E_Ori_Link, L_Ori_Link), force=TRUE), add=TRUE)
 
   # Sequencing Alignment & Binned Coverage Calculation
 
