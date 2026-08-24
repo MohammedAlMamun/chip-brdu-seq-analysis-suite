@@ -1,5 +1,7 @@
 # Function reference
 
+For argument-by-argument guidance and complete call examples, see the [complete analysis vignette](ANALYSIS_VIGNETTE.md).
+
 ## Entry points
 
 | Function | Purpose |

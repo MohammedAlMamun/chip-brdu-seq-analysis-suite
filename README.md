@@ -116,6 +116,7 @@ Peak cohorts use the saved primary-analysis peak files and are centred on `peakS
 
 ## Documentation
 
+- [Complete analysis vignette: every function and argument](docs/ANALYSIS_VIGNETTE.md)
 - [Quick start and workflow selection](docs/QUICK_START.md)
 - [Function reference](docs/FUNCTION_REFERENCE.md)
 - [Outputs and report organization](docs/OUTPUTS.md)

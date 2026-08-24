@@ -6,6 +6,7 @@ All notable changes to this project will be documented here.
 
 ### Added
 
+- A complete user vignette covering every public function, every argument, outputs, and practical call examples.
 - Two-sided Wilcoxon rank-sum and across-metric BH-adjusted p-values on the dedicated Early/Late boxplot page.
 - A final single-metric side-by-side page in the genomic-element boxplot report, with `ComparisonMetric="ratio.ipin.noise"` by default.
 - Global Kruskal-Wallis and BH-adjusted pairwise Wilcoxon results when more than two element or peak cohorts are compared.
