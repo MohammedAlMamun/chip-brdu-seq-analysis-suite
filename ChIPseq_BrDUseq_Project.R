@@ -12355,10 +12355,8 @@ ChIP_BrDU_Early_Late_Enrichment_Plotter <- function(
       } else {
         MetricYLabels[[TargetMetric]]
       },
-      names=c(
-        paste0("E\n(n=", length(Values$E), ")"),
-        paste0("L\n(n=", length(Values$L), ")")
-      ),
+      names=FALSE,
+      xaxt="n",
       col=c(
         grDevices::adjustcolor(EarlyColor, alpha.f=0.75),
         grDevices::adjustcolor(LateColor, alpha.f=0.75)
@@ -12373,8 +12371,19 @@ ChIP_BrDU_Early_Late_Enrichment_Plotter <- function(
       cex.main=1,
       cex.lab=0.95,
       cex.axis=0.90,
-      cex.names=0.84,
       bty="n"
+    )
+    graphics::axis(
+      side=1,
+      at=c(1, 2),
+      labels=c(
+        paste0("E\n(n=", length(Values$E), ")"),
+        paste0("L\n(n=", length(Values$L), ")")
+      ),
+      las=1,
+      cex.axis=0.84,
+      mgp=c(3, 1.40, 0),
+      tcl=-0.28
     )
     Baseline <- if(TargetMetric == "ip.score"){
       NA_real_
