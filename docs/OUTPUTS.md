@@ -50,3 +50,26 @@ The wrapper intentionally excludes:
 - paired ChIP–BrDU comparison functions.
 
 These functions require experiment-specific choices and remain explicit calls in the run script.
+
+## Time-series analysis directory
+
+`ChIP_BrDU_TimeSeries_Analysis()` creates one independent series directory and never overwrites the completed primary-analysis samples:
+
+```text
+SeriesName_TimeSeries/
+├── Analysis_Manifest.tsv
+├── Peaks/
+├── Plots/
+└── Ratios/
+```
+
+`Peaks/` contains the common peak table, merged background-exclusion mask and fixed eligible 2-kb background chunks. `Ratios/` contains one coordinated strand-collapsed ratio table per time point, background QC, average-profile data and the element/peak-by-time summary matrix. `Plots/` contains all time-series PDFs together; it is not divided into separate heatmap or profile subfolders.
+
+The plot set contains:
+
+- a genome-wide PDF in which all time points are stacked for each shared 50-kb coordinate window;
+- chronological colour-gradient average profiles for each requested centre set;
+- heatmaps with identical coordinates, row ordering and colour limits across time points; and
+- a deterministic-background QC PDF.
+
+The coordinated tables preserve primary `ip.score`, `in.score`, `ratio.ipin` and generic-alignment `pvalue` values. Only `ip.noise`, `in.noise`, `ratio.ipnoise` and `ratio.ipin.noise` are recalculated from the common background coordinates.

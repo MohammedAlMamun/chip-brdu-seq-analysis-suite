@@ -81,3 +81,31 @@ Multiple completed sample directories may be supplied to the region and rDNA plo
 - `OutputDir` redirects reports without changing the input sample directory.
 
 Graphical details that should remain consistent across experiments are intentionally internal to the functions.
+
+## 7. Coordinate a completed time series
+
+Run every time point independently with the primary-analysis function first. Then supply the three to six completed sample folders in biological order:
+
+```r
+ChIP_BrDU_TimeSeries_Analysis(
+  SampleDirs=c(
+    "/data/MCM/G1",
+    "/data/MCM/10min",
+    "/data/MCM/20min"
+  ),
+  TimePoints=c("G1", "10 min", "20 min"),
+  Assay="ChIP",
+  Alignment="generic",
+  SeriesName="MCM_TimeCourse",
+  PeakSet="union",
+  CenterSets=c("EarlyOrigin", "LateOrigin", "AllOrigins"),
+  Metric="ratio.ipin.noise",
+  Window=3000,
+  WindowSizeKb=50,
+  Log2Values=FALSE,
+  y_val=NULL,
+  OutputDir="/data/MCM/MCM_TimeCourse"
+)
+```
+
+`PeakSet="union"` uses the merged peaks from all time points. To use the peaks from one supplied time point, choose `PeakSet="reference"` and set `ReferenceTimePoint` to its exact label. The function is strand-collapsed and intended for relative enrichment; the current version has no replicate model or external BED input.

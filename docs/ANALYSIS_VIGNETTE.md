@@ -21,7 +21,8 @@ The main script also contains many local helper functions. Those helpers are imp
 13. [`ChIP_BrDU_Genomic_Element_Heatmap_Plotter()`](#chip_brdu_genomic_element_heatmap_plotter)
 14. [`ChIP_BrDU_Region_Comparison_Plotter()`](#chip_brdu_region_comparison_plotter)
 15. [`ChIP_BrDU_Enrichment_Comparison_Plotter()`](#chip_brdu_enrichment_comparison_plotter)
-16. [Recommended workflow](#recommended-workflow)
+16. [`ChIP_BrDU_TimeSeries_Analysis()`](#chip_brdu_timeseries_analysis)
+17. [Recommended workflow](#recommended-workflow)
 
 <a id="before-running-a-function"></a>
 
@@ -848,6 +849,124 @@ ChIP_BrDU_Enrichment_Comparison_Plotter(
 )
 ```
 
+<a id="chip_brdu_timeseries_analysis"></a>
+
+## 14. `ChIP_BrDU_TimeSeries_Analysis()`
+
+Coordinates three to six completed primary-analysis samples from an ordered ChIP or BrDU time course. It builds one common peak mask and one deterministic background grid, estimates each sample's background on those identical coordinates, and writes new coordinated ratios without changing the primary sample folders.
+
+```r
+ChIP_BrDU_TimeSeries_Analysis(
+  SampleDirs,
+  TimePoints,
+  Assay=c("ChIP", "BrDU"),
+  Alignment=c("generic", "malign"),
+  SeriesName="TimeSeries",
+  PeakSet=c("union", "reference"),
+  ReferenceTimePoint=NULL,
+  CenterSets=c("EarlyOrigin", "LateOrigin", "AllOrigins"),
+  Metric=c("ratio.ipin.noise", "ratio.ipin", "ratio.ipnoise", "ip.score"),
+  Window=3000,
+  WindowSizeKb=50,
+  Log2Values=FALSE,
+  y_val=NULL,
+  OutputDir=NULL
+)
+```
+
+### Arguments
+
+| Argument | Default | Explanation |
+|---|---|---|
+| `SampleDirs` | required | Ordered vector of three to six completed primary-analysis sample directories. Every sample must use the same assay, alignment mode, reference and sliding-window coordinate grid. |
+| `TimePoints` | required | Unique labels in biological order, one per sample directory. This order controls the colour gradient and all time-series panels. |
+| `Assay` | ChIP or BrDU | Selects the assay coverage, ratio and peak filenames in every completed sample. |
+| `Alignment` | generic or malign | Selects the standard or multi-alignment nuclear output folders. Dedicated `mrdna` output is outside this function. |
+| `SeriesName` | `"TimeSeries"` | Descriptive prefix used for the series folder, tables, masks and PDFs. |
+| `PeakSet` | union or reference | `"union"` merges overlapping genome-wide peaks from every time point. `"reference"` uses the saved peaks from one selected time point. |
+| `ReferenceTimePoint` | `NULL` | Exact time-point label or one-based numeric index required by `PeakSet="reference"`; ignored for a union. |
+| `CenterSets` | Early, Late and All origins | One or more shared centre cohorts for average profiles and heatmaps. Supported values are `EarlyOrigin`, `LateOrigin`, `AllOrigins` and the five calculated `*Peaks` selectors. |
+| `Metric` | `"ratio.ipin.noise"` first | One coordinated metric used by the genome-wide profile, average profiles and heatmaps. |
+| `Window` | `3000` | Half-window in base pairs around every origin midpoint or common peak summit. It must be divisible by the saved sliding-window step. |
+| `WindowSizeKb` | `50` | Genomic span in kilobases represented by one stacked genome-wide PDF page. |
+| `Log2Values` | `FALSE` | Applies `log2(1+x)` to coverage or `log2(x)` to positive ratio values for display and centre summaries. Coordinated BED values remain untransformed. |
+| `y_val` | `NULL` | Optional common upper plotting limit for genome-wide and average-profile panels. `NULL` uses robust automatic scaling. |
+| `OutputDir` | `NULL` | Complete time-series output directory. By default, a `SeriesName_TimeSeries` folder is created beside the first sample directory. |
+
+### Fixed background contract
+
+The public call intentionally has no external BED or low-mappability-mask argument. The current implementation:
+
+- buffers the common genome-wide peaks by 600 bp;
+- excludes `chrM` from background training;
+- excludes chrXII coordinates 451,417–469,691, corresponding to the two represented rDNA units in the bundled S288C reference;
+- excludes the terminal 15 kb at both ends of every nuclear chromosome;
+- creates non-overlapping, absolute 2-kb candidate chunks and uses only coverage windows fully contained by a chunk;
+- retains only chunks with positive median raw Input coverage at every time point; and
+- fits the same log-scale chromosome-position background model used conceptually by primary analysis, but on the fixed deterministic chunks instead of independently resampled coordinates.
+
+Each sample keeps its own assay and Input background magnitude; only the genomic coordinates used to estimate those backgrounds are shared. The function preserves primary `ip.score`, `in.score`, `ratio.ipin` and, for generic alignment, `pvalue`. It recalculates `ip.noise`, `in.noise`, `ratio.ipnoise` and `ratio.ipin.noise` in new tables.
+
+### Centre sets and reports
+
+`AllOrigins` reads the bundled confirmed ARS list. Peak selectors build a common cohort using the chosen `PeakSet` rule. Centres falling in `chrM`, rDNA or terminal 15-kb regions are removed from centred reports.
+
+Average-profile lines use one chronological viridis gradient and display-only spline smoothing. Heatmaps keep the same coordinates, row order and colour limits in every time-point panel; rows are ordered by the time of maximum window-mean signal. The genome-wide PDF uses one coordinate window per page, vertically stacks every time point with one shared y-axis, and places one common genomic-feature track below the stack.
+
+### Output organization
+
+```text
+SeriesName_TimeSeries/
+├── Analysis_Manifest.tsv
+├── Peaks/
+│   ├── common peak BED files
+│   ├── background exclusion mask
+│   └── fixed eligible background chunks
+├── Ratios/
+│   ├── one coordinated ratio BED per time point
+│   ├── background QC table
+│   ├── average-profile table
+│   └── centre-by-time summary matrix
+└── Plots/
+    ├── stacked genome-wide PDF
+    ├── average-profile PDF
+    ├── heatmap PDF
+    └── background-QC PDF
+```
+
+There are no heatmap-, profile-, or time-point-specific subfolders within these modality folders.
+
+### Interpretation
+
+The common coordinate grid makes relative changes and redistribution across the series more comparable. It does not provide absolute genome-wide occupancy normalization. In particular, a licensing or replication time course without spike-in material must be described as relative enrichment rather than a measurement of total chromatin-bound protein.
+
+The current version is strand-collapsed and descriptive. It has no biological-replicate model, uncertainty interval, IDR analysis or external custom-coordinate input.
+
+### Example
+
+```r
+ChIP_BrDU_TimeSeries_Analysis(
+  SampleDirs=c(
+    "/data/MCM/G1",
+    "/data/MCM/10min",
+    "/data/MCM/20min",
+    "/data/MCM/30min"
+  ),
+  TimePoints=c("G1", "10 min", "20 min", "30 min"),
+  Assay="ChIP",
+  Alignment="generic",
+  SeriesName="MCM_Licensing",
+  PeakSet="union",
+  CenterSets=c("EarlyOrigin", "LateOrigin", "AllOrigins", "OriginPeaks"),
+  Metric="ratio.ipin.noise",
+  Window=3000,
+  WindowSizeKb=50,
+  Log2Values=FALSE,
+  y_val=NULL,
+  OutputDir="/data/MCM/MCM_Licensing_TimeSeries"
+)
+```
+
 <a id="recommended-workflow"></a>
 
 ## Recommended workflow
@@ -858,6 +977,7 @@ For a new sample:
 2. Use `ChIP_BrDU_Complete_Analysis()` for a standard end-to-end run, or `ChIP_BrDU_Primary_Analysis()` when downstream functions will be selected manually.
 3. Use the whole-genome and focused Early/Late reports for experiment-specific review.
 4. Use regional, rDNA, average-profile, boxplot, and heatmap functions to build targeted figures from the final saved ratio tables.
-5. Use the two comparison functions only when an explicit ChIP–BrDU pair is biologically appropriate.
+5. Use `ChIP_BrDU_TimeSeries_Analysis()` after three to six compatible primary runs when the experiment has an ordered time course.
+6. Use the two comparison functions only when an explicit ChIP–BrDU pair is biologically appropriate.
 
 The example calls in `Run_ChIPseq_BrDUseq_Project.R` remain the shortest laboratory interface. This vignette is the detailed reference to consult when changing an argument or interpreting a generated report.

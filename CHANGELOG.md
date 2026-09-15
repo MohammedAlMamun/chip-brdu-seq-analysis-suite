@@ -4,7 +4,17 @@ All notable changes to this project will be documented here.
 
 ## [Unreleased]
 
-No changes recorded after the current release candidate.
+### Added
+
+- `ChIP_BrDU_TimeSeries_Analysis()` for coordinated three-to-six-point, strand-collapsed ChIP or BrDU time courses.
+- Deterministic common 2-kb background coordinates with shared positive-Input eligibility across all time points.
+- Automatic background exclusion of common peaks buffered by 600 bp, `chrM`, chrXII rDNA and the terminal 15 kb of every nuclear chromosome.
+- New coordinated ratio tables, background QC, chronological average profiles, shared-order heatmaps and stacked genome-wide time-series profiles.
+- Union or reference-time-point common peak construction and shared curated-origin or calculated-peak centre sets.
+
+### Changed
+
+- The run script and documentation now include explicit ChIP and BrDU time-series calls and interpretation guidance.
 
 ## [1.0.0-rc1] - 2026-08-24
 

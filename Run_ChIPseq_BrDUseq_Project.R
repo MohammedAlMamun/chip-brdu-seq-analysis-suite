@@ -114,6 +114,24 @@ ChIP_BrDU_Genomic_Element_Heatmap_Plotter( SampleDir=CHIP_SAMPLE_DIR,
                                            Log2Values=TRUE,
                                            OrderBy="ratio.ipin.noise" )
 
+## Uses three to six completed time-point sample folders.
+ChIP_BrDU_TimeSeries_Analysis( SampleDirs=c("/full/path/to/G1",
+                                            "/full/path/to/10min",
+                                            "/full/path/to/20min"),
+                               TimePoints=c("G1", "10 min", "20 min"),
+                               Assay="ChIP",
+                               Alignment=CHIP_ALIGNMENT,
+                               SeriesName="MCM_TimeCourse",
+                               PeakSet="union",
+                               ReferenceTimePoint=NULL,
+                               CenterSets=c("EarlyOrigin", "LateOrigin", "AllOrigins"),
+                               Metric="ratio.ipin.noise",
+                               Window=3000,
+                               WindowSizeKb=50,
+                               Log2Values=FALSE,
+                               y_val=NULL,
+                               OutputDir="/full/path/to/MCM_TimeCourse" )
+
 
 ###############################################################################
 ## BLOCK 4 — INDIVIDUAL BrDU ANALYSES
@@ -204,6 +222,24 @@ ChIP_BrDU_Genomic_Element_Heatmap_Plotter( SampleDir=BRDU_SAMPLE_DIR,
                                            Window=3000,
                                            Log2Values=TRUE,
                                            OrderBy="ratio.ipin.noise" )
+
+## Uses three to six completed time-point sample folders.
+ChIP_BrDU_TimeSeries_Analysis( SampleDirs=c("/full/path/to/0min",
+                                            "/full/path/to/15min",
+                                            "/full/path/to/30min"),
+                               TimePoints=c("0 min", "15 min", "30 min"),
+                               Assay="BrDU",
+                               Alignment=BRDU_ALIGNMENT,
+                               SeriesName="BrDU_TimeCourse",
+                               PeakSet="union",
+                               ReferenceTimePoint=NULL,
+                               CenterSets=c("EarlyOrigin", "LateOrigin", "AllOrigins"),
+                               Metric="ratio.ipin.noise",
+                               Window=3000,
+                               WindowSizeKb=50,
+                               Log2Values=FALSE,
+                               y_val=NULL,
+                               OutputDir="/full/path/to/BrDU_TimeCourse" )
 
 
 ###############################################################################

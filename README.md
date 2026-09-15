@@ -15,6 +15,7 @@ An R-based end-to-end analysis and visualization suite for paired-end *Saccharom
 - Statistical side-by-side boxplot comparisons for selected element or peak cohorts.
 - A focused early-versus-late origin report with comparative boxplot p-values.
 - Paired ChIP–BrDU regional and genomic-element comparisons with separate y-axes.
+- Coordinated three-to-six-point time-series denoising, profiles and heatmaps on one fixed background grid.
 - A complete-analysis wrapper that runs primary analysis and the standard downstream report set.
 
 Plotters consume the saved ratio tables and peak calls produced by the primary analysis. They do not simulate reads, call peaks again or apply an additional noise filter. Spline smoothing is used only for graphical presentation of average profiles.
@@ -134,6 +135,7 @@ Use [GitHub Issues](https://github.com/MohammedAlMamun/chip-brdu-seq-analysis-su
 - The current primary workflow expects paired-end reads.
 - Executable paths currently target the laboratory `ngsAnalyser.app` macOS installation.
 - The `mrdna` workflow uses the bundled custom 18,274-bp two-repeat reference. Its second repeat is an exact duplicate of the first custom repeat, not the native second SGD repeat.
+- Time-series analysis is currently strand-collapsed, has no replicate model or external BED input, and reports relative rather than absolute occupancy.
 - This RC has been developed and trialled on representative laboratory output but does not yet have automated continuous-integration tests with distributable sequencing data.
 
 ## Roadmap

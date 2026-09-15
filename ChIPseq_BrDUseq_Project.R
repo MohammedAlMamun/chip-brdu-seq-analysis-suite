@@ -14578,6 +14578,1576 @@ ChIP_BrDU_Enrichment_Comparison_Plotter <- function(
 }
 
 
+## Coordinated strand-collapsed ChIP/BrDU time-series analysis.
+##
+## Every SampleDirs entry must be a completed primary-analysis sample. The
+## function does not rerun alignment, coverage calculation, or peak calling.
+## It constructs one common peak exclusion mask, one deterministic set of
+## 2-kb background chunks, and uses those identical coordinates to re-estimate
+## the assay and Input backgrounds at every ordered time point. Primary outputs
+## are never overwritten; coordinated ratio tables and reports are written to a
+## new series directory.
+##
+## Background training always excludes chrM, the two represented chrXII rDNA
+## units, the terminal 15 kb of every nuclear chromosome, and the common peaks
+## buffered by 600 bp. Candidate chunks must have positive median Input signal
+## in every time point. Values remain relative enrichments: without an external
+## reference such as a spike-in, changes must not be interpreted as absolute
+## genome-wide occupancy changes.
+##
+## CenterSets may contain EarlyOrigin, LateOrigin, AllOrigins, or any of the five
+## primary-analysis peak selectors. Peak-centred cohorts use the same union or
+## reference-time-point rule as the background mask. No external BED input is
+## accepted in this first version.
+##
+## Example:
+## ChIP_BrDU_TimeSeries_Analysis(
+##   SampleDirs=c("/path/G1", "/path/10min", "/path/20min"),
+##   TimePoints=c("G1", "10 min", "20 min"),
+##   Assay="ChIP",
+##   Alignment="generic",
+##   SeriesName="MCM_TimeCourse",
+##   PeakSet="union",
+##   CenterSets=c("EarlyOrigin", "LateOrigin", "AllOrigins")
+## )
+ChIP_BrDU_TimeSeries_Analysis <- function(
+    SampleDirs,
+    TimePoints,
+    Assay=c("ChIP", "BrDU"),
+    Alignment=c("generic", "malign"),
+    SeriesName="TimeSeries",
+    PeakSet=c("union", "reference"),
+    ReferenceTimePoint=NULL,
+    CenterSets=c("EarlyOrigin", "LateOrigin", "AllOrigins"),
+    Metric=c("ratio.ipin.noise", "ratio.ipin", "ratio.ipnoise", "ip.score"),
+    Window=3000,
+    WindowSizeKb=50,
+    Log2Values=FALSE,
+    y_val=NULL,
+    OutputDir=NULL){
+
+  ## Fixed scientific and graphical contract.
+  PeakBufferBp <- 600L
+  BackgroundChunkBp <- 2000L
+  TelomereMaskBp <- 15000L
+  NoiseSmoothingSpar <- 0.65
+  NoiseFloor <- 1e-6
+  ProfileSmoothingSpar <- 0.5
+  rDNAChromosome <- "chrXII"
+  ## Zero-based half-open coordinates of the two represented S288C rDNA units
+  ## in the bundled R64-1-1 chromosome-XII sequence.
+  rDNAStart <- 451417L
+  rDNAEnd <- 469691L
+
+  Assay <- match.arg(Assay)
+  Alignment <- match.arg(Alignment)
+  PeakSet <- match.arg(PeakSet)
+  Metric <- match.arg(Metric)
+
+  ValidateText <- function(value, name){
+    if(length(value) != 1L || is.na(value) || !nzchar(as.character(value))){
+      stop(name, " must be one non-empty value.", call.=FALSE)
+    }
+    as.character(value)
+  }
+  ValidateWholeNumber <- function(value, name){
+    if(length(value) != 1L || !is.numeric(value) || !is.finite(value) ||
+       value <= 0 || abs(value-round(value)) > sqrt(.Machine$double.eps)){
+      stop(name, " must be one positive whole number.", call.=FALSE)
+    }
+    as.integer(round(value))
+  }
+  SanitizeName <- function(value){
+    value <- gsub("[^A-Za-z0-9._-]+", "_", as.character(value))
+    value <- gsub("_+", "_", value)
+    value <- sub("^_+", "", value)
+    value <- sub("_+$", "", value)
+    value
+  }
+  CoordinatesMatch <- function(first, second){
+    nrow(first) == nrow(second) &&
+      identical(as.character(first$chrom), as.character(second$chrom)) &&
+      identical(as.numeric(first$chromStart), as.numeric(second$chromStart)) &&
+      identical(as.numeric(first$chromEnd), as.numeric(second$chromEnd))
+  }
+
+  if(!requireNamespace("data.table", quietly=TRUE)){
+    stop("The data.table package is required for time-series analysis.", call.=FALSE)
+  }
+  if(!requireNamespace("viridisLite", quietly=TRUE)){
+    stop("The viridisLite package is required for time-series heatmaps.", call.=FALSE)
+  }
+
+  if(!is.character(SampleDirs) || length(SampleDirs) < 3L ||
+     length(SampleDirs) > 6L || anyNA(SampleDirs) || any(!nzchar(SampleDirs))){
+    stop("SampleDirs must contain three to six completed sample directories.", call.=FALSE)
+  }
+  SampleDirs <- vapply(
+    SampleDirs,
+    function(path) normalizePath(path.expand(path), winslash="/", mustWork=TRUE),
+    character(1)
+  )
+  if(anyDuplicated(SampleDirs)){
+    stop("SampleDirs must not contain duplicated directories.", call.=FALSE)
+  }
+  NumberOfSamples <- length(SampleDirs)
+  if(!is.character(TimePoints) || length(TimePoints) != NumberOfSamples ||
+     anyNA(TimePoints) || any(!nzchar(TimePoints)) || anyDuplicated(TimePoints)){
+    stop(
+      "TimePoints must contain one unique, non-empty label per SampleDirs entry.",
+      call.=FALSE
+    )
+  }
+  TimePoints <- as.character(TimePoints)
+  TimePointTags <- vapply(TimePoints, SanitizeName, character(1))
+  if(any(!nzchar(TimePointTags)) || anyDuplicated(TimePointTags)){
+    stop("TimePoints must remain unique after filename sanitization.", call.=FALSE)
+  }
+  SampleNames <- basename(SampleDirs)
+  if(anyDuplicated(SampleNames)){
+    stop("Completed sample directories must have unique folder names.", call.=FALSE)
+  }
+
+  SeriesName <- ValidateText(SeriesName, "SeriesName")
+  SeriesTag <- SanitizeName(SeriesName)
+  if(!nzchar(SeriesTag)){
+    stop("SeriesName does not contain a filename-safe character.", call.=FALSE)
+  }
+  Window <- ValidateWholeNumber(Window, "Window")
+  WindowSizeKb <- ValidateWholeNumber(WindowSizeKb, "WindowSizeKb")
+  if(!is.logical(Log2Values) || length(Log2Values) != 1L || is.na(Log2Values)){
+    stop("Log2Values must be TRUE or FALSE.", call.=FALSE)
+  }
+  if(!is.null(y_val)){
+    if(length(y_val) != 1L || !is.numeric(y_val) || !is.finite(y_val) || y_val <= 0){
+      stop("y_val must be NULL or one positive number.", call.=FALSE)
+    }
+    y_val <- as.numeric(y_val)
+  }
+
+  ValidCenterSets <- c(
+    "EarlyOrigin", "LateOrigin", "AllOrigins",
+    "GenomewidePeaks", "NonOriginPeaks", "OriginPeaks",
+    "EarlyOriginPeaks", "LateOriginPeaks"
+  )
+  if(!is.character(CenterSets) || length(CenterSets) == 0L ||
+     anyNA(CenterSets) || any(!nzchar(CenterSets)) || anyDuplicated(CenterSets)){
+    stop("CenterSets must contain one or more unique supported selectors.", call.=FALSE)
+  }
+  InvalidCenterSets <- setdiff(CenterSets, ValidCenterSets)
+  if(length(InvalidCenterSets) > 0L){
+    stop(
+      "Unsupported CenterSets value(s): ",
+      paste(InvalidCenterSets, collapse=", "),
+      ". Supported values are: ", paste(ValidCenterSets, collapse=", "), ".",
+      call.=FALSE
+    )
+  }
+
+  ReferenceIndex <- NA_integer_
+  if(PeakSet == "reference"){
+    if(is.null(ReferenceTimePoint) || length(ReferenceTimePoint) != 1L ||
+       is.na(ReferenceTimePoint)){
+      stop(
+        "ReferenceTimePoint is required when PeakSet='reference'.",
+        call.=FALSE
+      )
+    }
+    if(is.numeric(ReferenceTimePoint)){
+      ReferenceIndex <- as.integer(ReferenceTimePoint)
+      if(!is.finite(ReferenceTimePoint) || ReferenceIndex != ReferenceTimePoint ||
+         ReferenceIndex < 1L || ReferenceIndex > NumberOfSamples){
+        stop("Numeric ReferenceTimePoint must index one supplied time point.", call.=FALSE)
+      }
+    } else {
+      ReferenceIndex <- match(as.character(ReferenceTimePoint), TimePoints)
+      if(is.na(ReferenceIndex)){
+        stop("ReferenceTimePoint does not match a supplied TimePoints label.", call.=FALSE)
+      }
+    }
+  } else if(!is.null(ReferenceTimePoint)){
+    warning("ReferenceTimePoint is ignored when PeakSet='union'.", call.=FALSE)
+  }
+
+  if(is.null(OutputDir)){
+    OutputDir <- file.path(dirname(SampleDirs[[1]]), paste0(SeriesTag, "_TimeSeries"))
+  } else {
+    OutputDir <- path.expand(ValidateText(OutputDir, "OutputDir"))
+  }
+  RatiosDir <- file.path(OutputDir, "Ratios")
+  PeaksDir <- file.path(OutputDir, "Peaks")
+  PlotsDir <- file.path(OutputDir, "Plots")
+  for(directory in c(OutputDir, RatiosDir, PeaksDir, PlotsDir)){
+    if(!dir.exists(directory)){
+      dir.create(directory, recursive=TRUE, showWarnings=FALSE)
+    }
+    if(!dir.exists(directory)){
+      stop("Could not create output directory: ", directory, call.=FALSE)
+    }
+  }
+  OutputDir <- normalizePath(OutputDir, winslash="/", mustWork=TRUE)
+  RatiosDir <- normalizePath(RatiosDir, winslash="/", mustWork=TRUE)
+  PeaksDir <- normalizePath(PeaksDir, winslash="/", mustWork=TRUE)
+  PlotsDir <- normalizePath(PlotsDir, winslash="/", mustWork=TRUE)
+
+  ProjectPaths <- ChIP_BrDU_Project_Paths(check=TRUE)
+  ChromosomeInfo <- data.table::data.table(
+    chrom=c("chrI", "chrII", "chrIII", "chrIV", "chrV", "chrVI", "chrVII",
+            "chrVIII", "chrIX", "chrX", "chrXI", "chrXII", "chrXIII",
+            "chrXIV", "chrXV", "chrXVI", "chrM"),
+    length=c(230218, 813184, 316620, 1531933, 576874, 270161, 1090940,
+             562643, 439888, 745751, 666816, 1078177, 924431, 784333,
+             1091291, 948066, 85779)
+  )
+  NuclearChromosomes <- ChromosomeInfo$chrom[seq_len(16L)]
+
+  CoverageFolder <- if(Alignment == "generic") "Coverage" else "Coverage_ma"
+  RatioFolder <- if(Alignment == "generic") "Ratios" else "Ratios_ma"
+  PeakFolder <- if(Alignment == "generic") "Peaks" else "Peaks_ma"
+  SampleFiles <- lapply(seq_len(NumberOfSamples), function(index){
+    sample_dir <- SampleDirs[[index]]
+    sample_name <- SampleNames[[index]]
+    list(
+      ip_watson=file.path(
+        sample_dir, CoverageFolder,
+        paste0(sample_name, "_", Assay, "_watson.bed")
+      ),
+      ip_crick=file.path(
+        sample_dir, CoverageFolder,
+        paste0(sample_name, "_", Assay, "_crick.bed")
+      ),
+      input_watson=file.path(
+        sample_dir, CoverageFolder,
+        paste0(sample_name, "_Input_watson.bed")
+      ),
+      input_crick=file.path(
+        sample_dir, CoverageFolder,
+        paste0(sample_name, "_Input_crick.bed")
+      ),
+      ratio=file.path(
+        sample_dir, RatioFolder,
+        paste0(sample_name, "_", Assay, "_collapsed.bed")
+      ),
+      peak_dir=file.path(sample_dir, PeakFolder)
+    )
+  })
+  RequiredFiles <- unlist(
+    lapply(SampleFiles, function(files){
+      unlist(files[c("ip_watson", "ip_crick", "input_watson", "input_crick", "ratio")])
+    }),
+    use.names=FALSE
+  )
+  MissingFiles <- RequiredFiles[!file.exists(RequiredFiles)]
+  if(length(MissingFiles) > 0L){
+    stop(
+      "Required primary-analysis file(s) are missing:\n",
+      paste(MissingFiles, collapse="\n"),
+      call.=FALSE
+    )
+  }
+
+  PeakClassMap <- c(
+    GenomewidePeaks="Genomewide",
+    NonOriginPeaks="NonOrigin",
+    OriginPeaks="Origin",
+    EarlyOriginPeaks="EarlyOrigin",
+    LateOriginPeaks="LateOrigin"
+  )
+  ReadPeakFile <- function(file, time_point){
+    if(!file.exists(file)){
+      stop("Required primary-analysis peak file is missing: ", file, call.=FALSE)
+    }
+    Header <- names(data.table::fread(
+      file, header=TRUE, sep="\t", nrows=0L,
+      showProgress=FALSE, data.table=TRUE
+    ))
+    Required <- c("chrom", "peakStart", "peakEnd", "peakSummit")
+    Missing <- setdiff(Required, Header)
+    if(length(Missing) > 0L){
+      stop(
+        "Peak table is missing required column(s) ",
+        paste(Missing, collapse=", "), ": ", file,
+        call.=FALSE
+      )
+    }
+    Peaks <- data.table::fread(
+      file, header=TRUE, sep="\t", select=Required,
+      showProgress=FALSE, data.table=TRUE
+    )
+    Peaks[, `:=`(
+      chrom=as.character(chrom),
+      peakStart=as.numeric(peakStart),
+      peakEnd=as.numeric(peakEnd),
+      peakSummit=as.numeric(peakSummit),
+      source_timepoint=time_point
+    )]
+    Peaks <- Peaks[
+      chrom %in% NuclearChromosomes & is.finite(peakStart) &
+        is.finite(peakEnd) & is.finite(peakSummit) &
+        peakStart >= 0 & peakEnd > peakStart &
+        peakSummit >= peakStart & peakSummit <= peakEnd
+    ]
+    data.table::setorder(Peaks, chrom, peakStart, peakEnd, peakSummit)
+    Peaks
+  }
+  CommonPeakCache <- new.env(parent=emptyenv())
+  BuildCommonPeaks <- function(primary_class){
+    if(exists(primary_class, envir=CommonPeakCache, inherits=FALSE)){
+      return(get(primary_class, envir=CommonPeakCache, inherits=FALSE))
+    }
+    PeakTables <- lapply(seq_len(NumberOfSamples), function(index){
+      file <- file.path(
+        SampleFiles[[index]]$peak_dir,
+        paste0(SampleNames[[index]], "_", primary_class, "_Peaks.bed")
+      )
+      ReadPeakFile(file, TimePoints[[index]])
+    })
+    if(PeakSet == "reference"){
+      Common <- data.table::copy(PeakTables[[ReferenceIndex]])
+      Common[, `:=`(
+        peakLength=peakEnd-peakStart,
+        supporting_timepoints=1L,
+        source_labels=TimePoints[[ReferenceIndex]]
+      )]
+    } else {
+      Combined <- data.table::rbindlist(PeakTables, use.names=TRUE)
+      if(nrow(Combined) == 0L){
+        Common <- data.table::data.table(
+          chrom=character(), peakStart=numeric(), peakEnd=numeric(),
+          peakSummit=numeric(), source_timepoint=character(),
+          peakLength=numeric(), supporting_timepoints=integer(),
+          source_labels=character()
+        )
+      } else {
+        data.table::setorder(Combined, chrom, peakStart, peakEnd, peakSummit)
+        Combined[, previous_max_end := data.table::shift(
+          cummax(peakEnd), fill=-Inf
+        ), by=chrom]
+        Combined[, peak_cluster := cumsum(peakStart > previous_max_end), by=chrom]
+        Common <- Combined[, .(
+          peakStart=min(peakStart),
+          peakEnd=max(peakEnd),
+          peakSummit=stats::median(peakSummit),
+          source_timepoint=paste(unique(source_timepoint), collapse=";"),
+          supporting_timepoints=data.table::uniqueN(source_timepoint),
+          source_labels=paste(unique(source_timepoint), collapse=";")
+        ), by=.(chrom, peak_cluster)]
+        Common[, peak_cluster := NULL]
+        Common[, peakSummit := pmin(pmax(peakSummit, peakStart), peakEnd)]
+        Common[, peakLength := peakEnd-peakStart]
+      }
+    }
+    data.table::setcolorder(
+      Common,
+      c("chrom", "peakStart", "peakEnd", "peakLength", "peakSummit",
+        "supporting_timepoints", "source_labels", "source_timepoint")
+    )
+    data.table::setorder(Common, chrom, peakStart, peakEnd)
+    assign(primary_class, Common, envir=CommonPeakCache)
+    Common
+  }
+
+  CommonGenomewidePeaks <- BuildCommonPeaks("Genomewide")
+  if(nrow(CommonGenomewidePeaks) == 0L){
+    stop("The selected common genome-wide peak set is empty.", call.=FALSE)
+  }
+  CommonPeakFile <- file.path(
+    PeaksDir,
+    paste0(SeriesTag, "_Common_Genomewide_Peaks.bed")
+  )
+  data.table::fwrite(
+    CommonGenomewidePeaks[, .(
+      chrom, peakStart, peakEnd, peakLength, peakSummit,
+      supporting_timepoints, source_labels
+    )],
+    CommonPeakFile, sep="\t", quote=FALSE, na="NA"
+  )
+
+  MergeMask <- function(Mask){
+    if(nrow(Mask) == 0L) return(Mask)
+    data.table::setorder(Mask, chrom, chromStart, chromEnd)
+    Merged <- vector("list", nrow(Mask))
+    OutputIndex <- 0L
+    for(chromosome in unique(Mask$chrom)){
+      Current <- Mask[chrom == chromosome]
+      Start <- Current$chromStart[[1]]
+      End <- Current$chromEnd[[1]]
+      Reasons <- Current$reason[[1]]
+      if(nrow(Current) > 1L){
+        for(index in 2:nrow(Current)){
+          if(Current$chromStart[[index]] <= End){
+            End <- max(End, Current$chromEnd[[index]])
+            Reasons <- paste(
+              unique(c(strsplit(Reasons, ";", fixed=TRUE)[[1]], Current$reason[[index]])),
+              collapse=";"
+            )
+          } else {
+            OutputIndex <- OutputIndex+1L
+            Merged[[OutputIndex]] <- data.table::data.table(
+              chrom=chromosome, chromStart=Start, chromEnd=End, reason=Reasons
+            )
+            Start <- Current$chromStart[[index]]
+            End <- Current$chromEnd[[index]]
+            Reasons <- Current$reason[[index]]
+          }
+        }
+      }
+      OutputIndex <- OutputIndex+1L
+      Merged[[OutputIndex]] <- data.table::data.table(
+        chrom=chromosome, chromStart=Start, chromEnd=End, reason=Reasons
+      )
+    }
+    data.table::rbindlist(Merged[seq_len(OutputIndex)], use.names=TRUE)
+  }
+
+  TelomereMask <- data.table::rbindlist(lapply(seq_len(16L), function(index){
+    chromosome <- ChromosomeInfo$chrom[[index]]
+    chromosome_length <- ChromosomeInfo$length[[index]]
+    data.table::data.table(
+      chrom=chromosome,
+      chromStart=c(0, chromosome_length-TelomereMaskBp),
+      chromEnd=c(TelomereMaskBp, chromosome_length),
+      reason=c("left_terminal_15kb", "right_terminal_15kb")
+    )
+  }))
+  rDNAMask <- data.table::data.table(
+    chrom=rDNAChromosome,
+    chromStart=rDNAStart,
+    chromEnd=rDNAEnd,
+    reason="rDNA_two_represented_units"
+  )
+  ChrMMask <- data.table::data.table(
+    chrom="chrM", chromStart=0,
+    chromEnd=ChromosomeInfo[chrom == "chrM", length],
+    reason="mitochondrial_chromosome"
+  )
+  BufferedPeakMask <- CommonGenomewidePeaks[, .(
+    chrom,
+    chromStart=pmax(0, peakStart-PeakBufferBp),
+    chromEnd=pmin(
+      ChromosomeInfo$length[match(chrom, ChromosomeInfo$chrom)],
+      peakEnd+PeakBufferBp
+    ),
+    reason="common_peak_buffer_600bp"
+  )]
+  ExclusionMask <- MergeMask(data.table::rbindlist(
+    list(TelomereMask, rDNAMask, ChrMMask, BufferedPeakMask),
+    use.names=TRUE
+  ))
+  ExclusionMaskFile <- file.path(
+    PeaksDir,
+    paste0(SeriesTag, "_Background_Exclusion_Mask.bed")
+  )
+  data.table::fwrite(
+    ExclusionMask,
+    ExclusionMaskFile,
+    sep="\t", quote=FALSE, na="NA"
+  )
+
+  CandidateChunks <- data.table::rbindlist(lapply(seq_len(16L), function(index){
+    chromosome <- ChromosomeInfo$chrom[[index]]
+    chromosome_length <- ChromosomeInfo$length[[index]]
+    Starts <- seq.int(0L, chromosome_length-BackgroundChunkBp, by=BackgroundChunkBp)
+    data.table::data.table(
+      chrom=chromosome,
+      chromStart=Starts,
+      chromEnd=Starts+BackgroundChunkBp
+    )
+  }))
+  CandidateChunks[, excluded := FALSE]
+  for(chromosome in NuclearChromosomes){
+    ChunkIndexes <- which(CandidateChunks$chrom == chromosome)
+    ChromosomeMask <- ExclusionMask[chrom == chromosome]
+    if(length(ChunkIndexes) == 0L || nrow(ChromosomeMask) == 0L) next
+    for(mask_index in seq_len(nrow(ChromosomeMask))){
+      Overlap <-
+        CandidateChunks$chromStart[ChunkIndexes] < ChromosomeMask$chromEnd[[mask_index]] &
+        CandidateChunks$chromEnd[ChunkIndexes] > ChromosomeMask$chromStart[[mask_index]]
+      CandidateChunks$excluded[ChunkIndexes[Overlap]] <- TRUE
+    }
+  }
+  CandidateChunks <- CandidateChunks[excluded == FALSE]
+  CandidateChunks[, excluded := NULL]
+  CandidateChunks[, chunk_id := paste(chrom, chromStart, chromEnd, sep=":")]
+  data.table::setorder(CandidateChunks, chrom, chromStart)
+
+  ReadCoverageFile <- function(file, table_label){
+    Coverage <- data.table::fread(
+      file, header=FALSE, sep="\t", select=c(1L, 2L, 3L, 5L),
+      showProgress=FALSE, data.table=TRUE
+    )
+    data.table::setnames(
+      Coverage,
+      c("chrom", "chromStart", "chromEnd", "score")
+    )
+    Coverage[, `:=`(
+      chrom=as.character(chrom),
+      chromStart=as.numeric(chromStart),
+      chromEnd=as.numeric(chromEnd),
+      score=as.numeric(score)
+    )]
+    if(nrow(Coverage) == 0L || any(!nzchar(Coverage$chrom)) ||
+       any(!is.finite(Coverage$chromStart)) ||
+       any(!is.finite(Coverage$chromEnd)) ||
+       any(Coverage$chromEnd <= Coverage$chromStart) ||
+       any(!is.finite(Coverage$score)) || any(Coverage$score < 0)){
+      stop("Invalid coverage table for ", table_label, ": ", file, call.=FALSE)
+    }
+    Coverage
+  }
+  ReadCollapsedCoverage <- function(files, sample_label){
+    IPWatson <- ReadCoverageFile(files$ip_watson, paste0(sample_label, " assay Watson"))
+    IPCrick <- ReadCoverageFile(files$ip_crick, paste0(sample_label, " assay Crick"))
+    InputWatson <- ReadCoverageFile(
+      files$input_watson, paste0(sample_label, " Input Watson")
+    )
+    InputCrick <- ReadCoverageFile(
+      files$input_crick, paste0(sample_label, " Input Crick")
+    )
+    Coordinates <- IPWatson[, .(chrom, chromStart, chromEnd)]
+    if(!CoordinatesMatch(Coordinates, IPCrick) ||
+       !CoordinatesMatch(Coordinates, InputWatson) ||
+       !CoordinatesMatch(Coordinates, InputCrick)){
+      stop("Coverage coordinates do not match for ", sample_label, ".", call.=FALSE)
+    }
+    Result <- data.table::data.table(
+      chrom=Coordinates$chrom,
+      chromStart=Coordinates$chromStart,
+      chromEnd=Coordinates$chromEnd,
+      ip.raw=IPWatson$score+IPCrick$score,
+      input.raw=InputWatson$score+InputCrick$score
+    )
+    rm(IPWatson, IPCrick, InputWatson, InputCrick)
+    Result
+  }
+  SummariseChunks <- function(Coverage){
+    Work <- Coverage[chrom %in% NuclearChromosomes]
+    Work[, chunkStart := floor(
+      ((chromStart+chromEnd)/2)/BackgroundChunkBp
+    )*BackgroundChunkBp]
+    ## A coverage window must be fully contained by its candidate chunk. This
+    ## prevents a bin centred beside an excluded interval from extending into
+    ## the buffered peak, rDNA, or terminal mask.
+    Work <- Work[
+      chromStart >= chunkStart &
+        chromEnd <= chunkStart+BackgroundChunkBp
+    ]
+    Work[, chunk_id := paste(chrom, chunkStart, chunkStart+BackgroundChunkBp, sep=":")]
+    Work <- Work[chunk_id %in% CandidateChunks$chunk_id]
+    Summary <- Work[, .(
+      ip_median=stats::median(ip.raw),
+      input_median=stats::median(input.raw),
+      contributing_bins=.N
+    ), by=chunk_id]
+    CandidateChunks[
+      Summary,
+      on=.(chunk_id),
+      .(
+        chunk_id=x.chunk_id,
+        chrom=x.chrom,
+        chromStart=x.chromStart,
+        chromEnd=x.chromEnd,
+        ip_median=i.ip_median,
+        input_median=i.input_median,
+        contributing_bins=i.contributing_bins
+      )
+    ]
+  }
+
+  message("Building one fixed background grid across ", NumberOfSamples, " time points...")
+  ReferenceCoordinates <- NULL
+  ChunkSummaries <- vector("list", NumberOfSamples)
+  LibraryFactors <- numeric(NumberOfSamples)
+  for(index in seq_len(NumberOfSamples)){
+    message("  Reading raw collapsed coverage: ", TimePoints[[index]])
+    Coverage <- ReadCollapsedCoverage(SampleFiles[[index]], TimePoints[[index]])
+    Coordinates <- Coverage[, .(chrom, chromStart, chromEnd)]
+    if(is.null(ReferenceCoordinates)){
+      ReferenceCoordinates <- data.table::copy(Coordinates)
+    } else if(!CoordinatesMatch(ReferenceCoordinates, Coordinates)){
+      stop(
+        "Coverage coordinates differ between time points; all samples must use ",
+        "the same reference and sliding-window settings.",
+        call.=FALSE
+      )
+    }
+    IPSum <- sum(Coverage$ip.raw, na.rm=TRUE)
+    InputSum <- sum(Coverage$input.raw, na.rm=TRUE)
+    if(!is.finite(IPSum) || IPSum <= 0 || !is.finite(InputSum) || InputSum <= 0){
+      stop("Assay or Input coverage sum is zero for ", TimePoints[[index]], ".", call.=FALSE)
+    }
+    LibraryFactors[[index]] <- IPSum/InputSum
+    ChunkSummaries[[index]] <- SummariseChunks(Coverage)
+    rm(Coverage, Coordinates)
+    gc(verbose=FALSE)
+  }
+
+  EligibilityMatrix <- vapply(
+    ChunkSummaries,
+    function(summary){
+      Values <- summary$input_median[match(CandidateChunks$chunk_id, summary$chunk_id)]
+      is.finite(Values) & Values > 0
+    },
+    logical(nrow(CandidateChunks))
+  )
+  if(is.null(dim(EligibilityMatrix))){
+    EligibilityMatrix <- matrix(EligibilityMatrix, ncol=NumberOfSamples)
+  }
+  Eligible <- apply(EligibilityMatrix, 1L, all)
+  BackgroundChunks <- data.table::copy(CandidateChunks[Eligible])
+  if(nrow(BackgroundChunks) < 16L){
+    stop(
+      "Fewer than 16 common positive-Input background chunks remain; ",
+      "the coordinated background cannot be estimated safely.",
+      call.=FALSE
+    )
+  }
+  BackgroundChunksFile <- file.path(
+    PeaksDir,
+    paste0(SeriesTag, "_Fixed_Background_Chunks.bed")
+  )
+  data.table::fwrite(
+    BackgroundChunks[, .(chrom, chromStart, chromEnd, chunk_id)],
+    BackgroundChunksFile, sep="\t", quote=FALSE, na="NA"
+  )
+
+  QCTable <- data.table::rbindlist(lapply(seq_len(NumberOfSamples), function(index){
+    Summary <- ChunkSummaries[[index]][chunk_id %in% BackgroundChunks$chunk_id]
+    data.table::data.table(
+      timepoint=TimePoints[[index]],
+      sample=SampleNames[[index]],
+      chromosome=NuclearChromosomes,
+      eligible_chunks=vapply(
+        NuclearChromosomes,
+        function(chromosome) sum(Summary$chrom == chromosome),
+        integer(1)
+      ),
+      median_assay=vapply(
+        NuclearChromosomes,
+        function(chromosome){
+          values <- Summary[chrom == chromosome, ip_median]
+          if(length(values) == 0L) NA_real_ else stats::median(values, na.rm=TRUE)
+        },
+        numeric(1)
+      ),
+      median_input=vapply(
+        NuclearChromosomes,
+        function(chromosome){
+          values <- Summary[chrom == chromosome, input_median]
+          if(length(values) == 0L) NA_real_ else stats::median(values, na.rm=TRUE)
+        },
+        numeric(1)
+      ),
+      library_factor=LibraryFactors[[index]]
+    )
+  }))
+  BackgroundQCFile <- file.path(RatiosDir, paste0(SeriesTag, "_Background_QC.tsv"))
+  data.table::fwrite(QCTable, BackgroundQCFile, sep="\t", quote=FALSE, na="NA")
+
+  InferStep <- function(Coordinates){
+    FirstChromosome <- NuclearChromosomes[[1]]
+    Starts <- sort(unique(Coordinates[chrom == FirstChromosome, chromStart]))
+    Differences <- diff(utils::head(Starts, 10000L))
+    Differences <- Differences[is.finite(Differences) & Differences > 0]
+    if(length(Differences) == 0L){
+      stop("Could not infer the coverage sliding-window step.", call.=FALSE)
+    }
+    as.integer(names(which.max(table(Differences))))
+  }
+  Step <- InferStep(ReferenceCoordinates)
+  if(Window %% Step != 0L){
+    stop(
+      "Window (", Window, " bp) must be an exact multiple of the inferred ",
+      "sliding-window step (", Step, " bp).",
+      call.=FALSE
+    )
+  }
+
+  PredictBackground <- function(Coverage, ChunkSummary, signal_column){
+    Selected <- ChunkSummary[chunk_id %in% BackgroundChunks$chunk_id]
+    SampleValues <- Selected[[signal_column]]
+    Positive <- SampleValues[is.finite(SampleValues) & SampleValues > NoiseFloor]
+    GlobalFloor <- if(length(Positive) > 0L){
+      max(
+        NoiseFloor,
+        as.numeric(stats::quantile(
+          Positive, probs=0.01, na.rm=TRUE, names=FALSE, type=8
+        ))
+      )
+    } else {
+      NoiseFloor
+    }
+    GlobalFallback <- stats::median(SampleValues, na.rm=TRUE)
+    if(!is.finite(GlobalFallback) || GlobalFallback < GlobalFloor){
+      GlobalFallback <- GlobalFloor
+    }
+    Prediction <- rep(GlobalFallback, nrow(Coverage))
+    BinCenters <- (Coverage$chromStart+Coverage$chromEnd)/2
+    for(chromosome in unique(Coverage$chrom)){
+      BinIndex <- which(Coverage$chrom == chromosome)
+      ChromosomeChunks <- Selected[chrom == chromosome]
+      Values <- ChromosomeChunks[[signal_column]]
+      Centers <- (ChromosomeChunks$chromStart+ChromosomeChunks$chromEnd)/2
+      Good <- is.finite(Values) & is.finite(Centers)
+      Values <- Values[Good]
+      Centers <- Centers[Good]
+      if(length(Values) == 0L){
+        Prediction[BinIndex] <- GlobalFallback
+        next
+      }
+      PositiveChromosome <- Values[Values > NoiseFloor]
+      ChromosomeFloor <- if(length(PositiveChromosome) > 0L){
+        max(
+          NoiseFloor,
+          as.numeric(stats::quantile(
+            PositiveChromosome, probs=0.01, na.rm=TRUE,
+            names=FALSE, type=8
+          ))
+        )
+      } else {
+        GlobalFloor
+      }
+      Fallback <- stats::median(Values, na.rm=TRUE)
+      if(!is.finite(Fallback) || Fallback < ChromosomeFloor){
+        Fallback <- max(GlobalFallback, ChromosomeFloor)
+      }
+      if(length(Values) < 4L || length(unique(Centers)) < 4L ||
+         length(unique(Values)) < 2L){
+        Prediction[BinIndex] <- Fallback
+        next
+      }
+      LogValues <- log(pmax(Values, ChromosomeFloor))
+      Fit <- tryCatch(
+        stats::smooth.spline(Centers, LogValues, spar=NoiseSmoothingSpar),
+        error=function(error) NULL
+      )
+      Predicted <- if(is.null(Fit)){
+        stats::approx(
+          Centers, LogValues, xout=BinCenters[BinIndex],
+          rule=2, ties="ordered"
+        )$y
+      } else {
+        stats::predict(Fit, BinCenters[BinIndex])$y
+      }
+      Predicted[!is.finite(Predicted)] <- log(Fallback)
+      Predicted <- pmin(pmax(Predicted, min(LogValues)), max(LogValues))
+      Predicted <- exp(Predicted)
+      Predicted[Predicted < ChromosomeFloor] <- ChromosomeFloor
+      Prediction[BinIndex] <- Predicted
+    }
+    Prediction
+  }
+
+  ReadPrimaryRatio <- function(file, sample_label){
+    Header <- names(data.table::fread(
+      file, header=TRUE, sep="\t", nrows=0L,
+      showProgress=FALSE, data.table=TRUE
+    ))
+    Required <- c(
+      "chrom", "chromStart", "chromEnd", "name", "ip.score", "in.score",
+      "ratio.ipin"
+    )
+    Missing <- setdiff(Required, Header)
+    if(length(Missing) > 0L){
+      stop(
+        sample_label, " primary ratio table is missing required column(s): ",
+        paste(Missing, collapse=", "),
+        call.=FALSE
+      )
+    }
+    Select <- c(Required, if("pvalue" %in% Header) "pvalue")
+    Ratio <- data.table::fread(
+      file, header=TRUE, sep="\t", select=Select,
+      showProgress=FALSE, data.table=TRUE
+    )
+    Ratio[, `:=`(
+      chrom=as.character(chrom),
+      chromStart=as.numeric(chromStart),
+      chromEnd=as.numeric(chromEnd),
+      name=as.character(name),
+      ip.score=as.numeric(ip.score),
+      in.score=as.numeric(in.score),
+      ratio.ipin=as.numeric(ratio.ipin)
+    )]
+    if("pvalue" %in% names(Ratio)) Ratio[, pvalue := as.numeric(pvalue)]
+    Ratio
+  }
+  SafeRatio <- function(numerator, denominator){
+    Value <- numerator/denominator
+    Value[!is.finite(Value)] <- 0
+    Value
+  }
+  TransformValues <- function(values){
+    values <- as.numeric(values)
+    if(!Log2Values) return(values)
+    if(Metric == "ip.score"){
+      return(log2(1+pmax(values, 0)))
+    }
+    Result <- rep(NA_real_, length(values))
+    Positive <- is.finite(values) & values > 0
+    Zero <- is.finite(values) & values == 0
+    Result[Positive] <- log2(values[Positive])
+    Result[Zero] <- 0
+    Result
+  }
+
+  message("Estimating coordinated backgrounds and writing ratio tables...")
+  CoordinatedRatioFiles <- character(NumberOfSamples)
+  PlotTables <- vector("list", NumberOfSamples)
+  for(index in seq_len(NumberOfSamples)){
+    message("  Coordinated ratios: ", TimePoints[[index]])
+    Coverage <- ReadCollapsedCoverage(SampleFiles[[index]], TimePoints[[index]])
+    if(!CoordinatesMatch(ReferenceCoordinates, Coverage)){
+      stop("Coverage coordinates changed while processing ", TimePoints[[index]], ".", call.=FALSE)
+    }
+    Primary <- ReadPrimaryRatio(SampleFiles[[index]]$ratio, TimePoints[[index]])
+    if(!CoordinatesMatch(Coverage, Primary)){
+      stop(
+        "Primary ratio and raw collapsed-coverage coordinates do not match for ",
+        TimePoints[[index]], ".",
+        call.=FALSE
+      )
+    }
+    IPNoise <- PredictBackground(Coverage, ChunkSummaries[[index]], "ip_median")
+    InputNoiseRaw <- PredictBackground(
+      Coverage, ChunkSummaries[[index]], "input_median"
+    )
+    InputNoise <- InputNoiseRaw*LibraryFactors[[index]]
+    Primary[, `:=`(
+      name=paste0(SeriesTag, "_", TimePointTags[[index]], "_", Assay,
+                  "_collapsed_coordinated"),
+      ip.noise=round(IPNoise, 4),
+      in.noise=round(InputNoise, 4)
+    )]
+    RatioIPNoise <- SafeRatio(Primary$ip.score, IPNoise)
+    RatioClean <- SafeRatio(
+      RatioIPNoise,
+      SafeRatio(Primary$in.score, InputNoise)
+    )
+    Primary[, `:=`(
+      ratio.ipnoise=round(RatioIPNoise, 4),
+      ratio.ipin.noise=round(RatioClean, 4)
+    )]
+    OutputColumns <- c(
+      "chrom", "chromStart", "chromEnd", "name", "ip.score", "in.score",
+      "ip.noise", "in.noise", "ratio.ipin", "ratio.ipnoise",
+      "ratio.ipin.noise", if("pvalue" %in% names(Primary)) "pvalue"
+    )
+    CoordinatedRatioFiles[[index]] <- file.path(
+      RatiosDir,
+      paste0(
+        SeriesTag, "_", TimePointTags[[index]], "_", Assay,
+        "_", Alignment, "_collapsed_coordinated.bed"
+      )
+    )
+    data.table::fwrite(
+      Primary[, ..OutputColumns],
+      CoordinatedRatioFiles[[index]],
+      sep="\t", quote=FALSE, na="NA"
+    )
+    PlotTable <- Primary[
+      chrom %in% NuclearChromosomes,
+      .(chrom, chromStart, chromEnd, signal=get(Metric))
+    ]
+    PlotTable[, display_signal := TransformValues(signal)]
+    data.table::setorder(PlotTable, chrom, chromStart)
+    PlotTables[[index]] <- PlotTable
+    rm(
+      Coverage, Primary, IPNoise, InputNoiseRaw, InputNoise,
+      RatioIPNoise, RatioClean, PlotTable
+    )
+    gc(verbose=FALSE)
+  }
+  names(PlotTables) <- TimePoints
+  names(CoordinatedRatioFiles) <- TimePoints
+
+  PrettyCenterSet <- function(center_set){
+    switch(
+      center_set,
+      EarlyOrigin="Early-firing origins",
+      LateOrigin="Late-firing origins",
+      AllOrigins="All confirmed origins",
+      GenomewidePeaks="Common genome-wide peaks",
+      NonOriginPeaks="Common non-origin peaks",
+      OriginPeaks="Common origin-associated peaks",
+      EarlyOriginPeaks="Common early-origin peaks",
+      LateOriginPeaks="Common late-origin peaks",
+      center_set
+    )
+  }
+  ReadCuratedCenters <- function(center_set){
+    File <- switch(
+      center_set,
+      EarlyOrigin=ProjectPaths$elements$early_origins,
+      LateOrigin=ProjectPaths$elements$late_origins,
+      AllOrigins=ProjectPaths$elements$ars
+    )
+    Elements <- data.table::fread(
+      File, header=TRUE, sep="\t", showProgress=FALSE, data.table=TRUE
+    )
+    Required <- c("chrom", "chromStart", "chromEnd", "name")
+    Missing <- setdiff(Required, names(Elements))
+    if(length(Missing) > 0L){
+      stop(
+        PrettyCenterSet(center_set), " support table is missing column(s): ",
+        paste(Missing, collapse=", "),
+        call.=FALSE
+      )
+    }
+    Elements[, .(
+      chrom=as.character(chrom),
+      chromStart=as.numeric(chromStart),
+      chromEnd=as.numeric(chromEnd),
+      center_name=as.character(name),
+      center=(as.numeric(chromStart)+as.numeric(chromEnd))/2
+    )]
+  }
+  ProblematicCenter <- function(chrom, center){
+    ChromosomeLength <- ChromosomeInfo$length[match(chrom, ChromosomeInfo$chrom)]
+    !chrom %in% NuclearChromosomes |
+      center < TelomereMaskBp |
+      center > (ChromosomeLength-TelomereMaskBp) |
+      (chrom == rDNAChromosome & center >= rDNAStart & center <= rDNAEnd)
+  }
+  CenterTables <- setNames(vector("list", length(CenterSets)), CenterSets)
+  RemovedCenterCounts <- setNames(integer(length(CenterSets)), CenterSets)
+  for(center_set in CenterSets){
+    if(center_set %in% names(PeakClassMap)){
+      PrimaryClass <- unname(PeakClassMap[[center_set]])
+      CommonClass <- BuildCommonPeaks(PrimaryClass)
+      CommonClassFile <- file.path(
+        PeaksDir,
+        paste0(SeriesTag, "_Common_", PrimaryClass, "_Peaks.bed")
+      )
+      data.table::fwrite(
+        CommonClass[, .(
+          chrom, peakStart, peakEnd, peakLength, peakSummit,
+          supporting_timepoints, source_labels
+        )],
+        CommonClassFile, sep="\t", quote=FALSE, na="NA"
+      )
+      Centers <- CommonClass[, .(
+        chrom,
+        chromStart=peakStart,
+        chromEnd=peakEnd,
+        center_name=paste0(PrimaryClass, "Peak_", seq_len(.N)),
+        center=peakSummit
+      )]
+    } else {
+      Centers <- ReadCuratedCenters(center_set)
+    }
+    Invalid <- ProblematicCenter(Centers$chrom, Centers$center)
+    RemovedCenterCounts[[center_set]] <- sum(Invalid, na.rm=TRUE)
+    Centers <- Centers[!Invalid]
+    if(nrow(Centers) == 0L){
+      stop(
+        "No usable centres remain for ", PrettyCenterSet(center_set),
+        " after excluding chrM, rDNA, and terminal 15-kb regions.",
+        call.=FALSE
+      )
+    }
+    Centers[, center_id := paste0(center_set, "_", seq_len(.N))]
+    Centers[, chromosome_order := match(chrom, NuclearChromosomes)]
+    data.table::setorder(Centers, chromosome_order, center, chromStart, chromEnd)
+    CenterTables[[center_set]] <- Centers
+  }
+
+  Offsets <- seq.int(-Window, Window, by=Step)
+  OffsetRows <- seq.int(-Window/Step, Window/Step)
+  BuildCenterMatrix <- function(PlotTable, Centers){
+    Matrix <- matrix(
+      NA_real_, nrow=nrow(Centers), ncol=length(Offsets),
+      dimnames=list(Centers$center_id, as.character(Offsets))
+    )
+    for(chromosome in unique(Centers$chrom)){
+      CenterIndexes <- which(Centers$chrom == chromosome)
+      ChromosomeSignal <- PlotTable[chrom == chromosome]
+      if(nrow(ChromosomeSignal) == 0L) next
+      BinCenters <- (ChromosomeSignal$chromStart+ChromosomeSignal$chromEnd)/2
+      TargetCenters <- Centers$center[CenterIndexes]
+      Lower <- findInterval(TargetCenters, BinCenters)
+      Lower[Lower < 1L] <- 1L
+      Lower[Lower > length(BinCenters)] <- length(BinCenters)
+      Upper <- pmin(Lower+1L, length(BinCenters))
+      ChooseUpper <- abs(BinCenters[Upper]-TargetCenters) <
+        abs(BinCenters[Lower]-TargetCenters)
+      Anchors <- Lower
+      Anchors[ChooseUpper] <- Upper[ChooseUpper]
+      for(local_index in seq_along(CenterIndexes)){
+        Targets <- Anchors[[local_index]]+OffsetRows
+        Valid <- Targets >= 1L & Targets <= nrow(ChromosomeSignal)
+        Matrix[CenterIndexes[[local_index]], Valid] <-
+          ChromosomeSignal$display_signal[Targets[Valid]]
+      }
+    }
+    Matrix
+  }
+  CenterMatrices <- setNames(vector("list", length(CenterSets)), CenterSets)
+  for(center_set in CenterSets){
+    CenterMatrices[[center_set]] <- lapply(
+      PlotTables,
+      BuildCenterMatrix,
+      Centers=CenterTables[[center_set]]
+    )
+  }
+
+  MedianOrNA <- function(values){
+    values <- values[is.finite(values)]
+    if(length(values) == 0L) NA_real_ else stats::median(values)
+  }
+  MeanOrNA <- function(values){
+    values <- values[is.finite(values)]
+    if(length(values) == 0L) NA_real_ else mean(values)
+  }
+  AverageProfiles <- data.table::rbindlist(lapply(CenterSets, function(center_set){
+    data.table::rbindlist(lapply(seq_len(NumberOfSamples), function(index){
+      Matrix <- CenterMatrices[[center_set]][[index]]
+      data.table::data.table(
+        center_set=center_set,
+        timepoint=TimePoints[[index]],
+        offset=Offsets,
+        median_enrichment=apply(Matrix, 2L, MedianOrNA),
+        contributing_centers=colSums(is.finite(Matrix))
+      )
+    }))
+  }))
+  AverageProfileFile <- file.path(
+    RatiosDir,
+    paste0(SeriesTag, "_TimeSeries_Average_Profiles.tsv")
+  )
+  data.table::fwrite(
+    AverageProfiles, AverageProfileFile,
+    sep="\t", quote=FALSE, na="NA"
+  )
+
+  CenterSummary <- data.table::rbindlist(lapply(CenterSets, function(center_set){
+    Centers <- CenterTables[[center_set]]
+    Tables <- lapply(seq_len(NumberOfSamples), function(index){
+      Matrix <- CenterMatrices[[center_set]][[index]]
+      data.table::data.table(
+        center_set=center_set,
+        center_id=Centers$center_id,
+        center_name=Centers$center_name,
+        chrom=Centers$chrom,
+        chromStart=Centers$chromStart,
+        chromEnd=Centers$chromEnd,
+        center=Centers$center,
+        timepoint=TimePoints[[index]],
+        window_median=apply(Matrix, 1L, MedianOrNA),
+        window_mean=apply(Matrix, 1L, MeanOrNA),
+        center_value=Matrix[, which.min(abs(Offsets)), drop=TRUE]
+      )
+    })
+    data.table::rbindlist(Tables)
+  }))
+  CenterSummaryFile <- file.path(
+    RatiosDir,
+    paste0(SeriesTag, "_Center_TimeSeries_Matrix.tsv")
+  )
+  data.table::fwrite(
+    CenterSummary, CenterSummaryFile,
+    sep="\t", quote=FALSE, na="NA"
+  )
+
+  TimeColors <- viridisLite::viridis(
+    NumberOfSamples, option="D", begin=0.08, end=0.92, direction=1
+  )
+  Baseline <- if(Metric == "ip.score") 0 else if(Log2Values) 0 else 1
+  MetricLabel <- switch(
+    Metric,
+    ip.score=paste0(Assay, " coverage"),
+    ratio.ipin=paste0(Assay, " / Input"),
+    ratio.ipnoise=paste0(Assay, " / Noise"),
+    ratio.ipin.noise="Clean enrichment"
+  )
+  if(Log2Values){
+    MetricLabel <- if(Metric == "ip.score"){
+      paste0("log2(1 + ", MetricLabel, ")")
+    } else {
+      paste0("log2(", MetricLabel, ")")
+    }
+  }
+  SafeSmooth <- function(x, y){
+    Result <- rep(NA_real_, length(y))
+    Good <- which(is.finite(x) & is.finite(y))
+    if(length(Good) < 4L || length(unique(x[Good])) < 4L ||
+       length(unique(y[Good])) < 2L){
+      Result[Good] <- y[Good]
+      return(Result)
+    }
+    Fit <- tryCatch(
+      stats::smooth.spline(x[Good], y[Good], spar=ProfileSmoothingSpar),
+      error=function(error) NULL
+    )
+    if(is.null(Fit)){
+      Result[Good] <- y[Good]
+    } else {
+      Result[Good] <- stats::predict(Fit, x[Good])$y
+    }
+    Result
+  }
+  CalculateYLimits <- function(values){
+    Values <- values[is.finite(values)]
+    if(length(Values) == 0L) return(c(0, 1))
+    if(!is.null(y_val)){
+      Lower <- if(Log2Values && Metric != "ip.score") -1 else 0
+      if(y_val <= Lower){
+        stop("y_val must exceed the lower plotting limit.", call.=FALSE)
+      }
+      return(c(Lower, y_val))
+    }
+    if(Log2Values && Metric != "ip.score"){
+      Limits <- as.numeric(stats::quantile(
+        Values, probs=c(0.005, 0.995), na.rm=TRUE, names=FALSE, type=8
+      ))
+      Lower <- min(-1, Limits[[1]], Baseline)
+      Upper <- max(1, Limits[[2]], Baseline)
+    } else {
+      Upper <- as.numeric(stats::quantile(
+        Values, probs=0.995, na.rm=TRUE, names=FALSE, type=8
+      ))
+      Upper <- max(Upper, Baseline*1.05, 1e-6)
+      Lower <- 0
+    }
+    Padding <- diff(c(Lower, Upper))*0.04
+    if(!is.finite(Padding) || Padding <= 0) Padding <- 0.1
+    c(Lower, Upper+Padding)
+  }
+
+  AverageProfilePDF <- file.path(
+    PlotsDir,
+    paste0(SeriesTag, "_", Assay, "_", Alignment, "_TimeSeries_Average_Profiles.pdf")
+  )
+  grDevices::pdf(AverageProfilePDF, width=10, height=7.5, useDingbats=FALSE)
+  for(center_set in CenterSets){
+    TargetCenterSet <- center_set
+    Page <- AverageProfiles[center_set == TargetCenterSet]
+    PageValues <- Page$median_enrichment
+    YLim <- CalculateYLimits(PageValues)
+    graphics::par(mar=c(5.0, 5.2, 3.8, 1.5), oma=c(0.6, 0.5, 1.2, 0.5))
+    graphics::plot(
+      NA, xlim=c(-Window, Window)/1000, ylim=YLim,
+      xaxs="i", yaxs="i", las=1, bty="n",
+      xlab=if(center_set %in% names(PeakClassMap)){
+        "Distance from common peak summit (kb)"
+      } else {
+        "Distance from origin midpoint (kb)"
+      },
+      ylab=MetricLabel,
+      main=PrettyCenterSet(center_set),
+      cex.main=1.2, cex.lab=1.05, cex.axis=0.95
+    )
+    graphics::abline(h=Baseline, col="gray72", lty=2, lwd=0.9)
+    graphics::abline(v=0, col="gray72", lty=2, lwd=0.9)
+    for(index in seq_len(NumberOfSamples)){
+      Profile <- Page[timepoint == TimePoints[[index]]]
+      Y <- SafeSmooth(Profile$offset, Profile$median_enrichment)
+      graphics::lines(Profile$offset/1000, Y, col=TimeColors[[index]], lwd=2.2)
+    }
+    graphics::legend(
+      "topright", legend=TimePoints, col=TimeColors,
+      lwd=2.2, bty="n", cex=0.88, title="Time point"
+    )
+    graphics::mtext(
+      paste0(
+        SeriesName, " | ", Assay, " | ", Alignment,
+        " | coordinated relative enrichment | n=", nrow(CenterTables[[center_set]])
+      ),
+      side=3, outer=TRUE, line=0.15, cex=0.84, col="gray35"
+    )
+    graphics::box(col="gray45")
+  }
+  grDevices::dev.off()
+
+  HeatmapPDF <- file.path(
+    PlotsDir,
+    paste0(SeriesTag, "_", Assay, "_", Alignment, "_TimeSeries_Heatmaps.pdf")
+  )
+  HeatmapWidth <- max(10, 3.0*NumberOfSamples+1.5)
+  grDevices::pdf(HeatmapPDF, width=HeatmapWidth, height=8.5, useDingbats=FALSE)
+  for(center_set in CenterSets){
+    Matrices <- CenterMatrices[[center_set]]
+    RowMeans <- vapply(
+      Matrices,
+      function(Matrix) apply(Matrix, 1L, MeanOrNA),
+      numeric(nrow(CenterTables[[center_set]]))
+    )
+    if(is.null(dim(RowMeans))) RowMeans <- matrix(RowMeans, ncol=NumberOfSamples)
+    Ranking <- RowMeans
+    Ranking[!is.finite(Ranking)] <- -Inf
+    PeakTime <- max.col(Ranking, ties.method="first")
+    PeakAmplitude <- apply(Ranking, 1L, max)
+    RowOrder <- order(PeakTime, -PeakAmplitude, na.last=TRUE)
+    Matrices <- lapply(Matrices, function(Matrix) Matrix[RowOrder, , drop=FALSE])
+    Values <- unlist(lapply(Matrices, as.vector), use.names=FALSE)
+    Values <- Values[is.finite(Values)]
+    if(length(Values) == 0L) next
+    Limits <- as.numeric(stats::quantile(
+      Values, probs=c(0.01, 0.99), na.rm=TRUE, names=FALSE, type=8
+    ))
+    if(Log2Values && Metric != "ip.score"){
+      MaximumAbsolute <- max(abs(Limits), 1e-6)
+      Limits <- c(-MaximumAbsolute, MaximumAbsolute)
+      Palette <- grDevices::colorRampPalette(
+        c("#3B528B", "#F7F7F7", "#FDE725"), space="Lab"
+      )(256L)
+    } else {
+      Limits[[1]] <- min(Limits[[1]], Baseline)
+      Limits[[2]] <- max(Limits[[2]], Baseline)
+      if(Limits[[1]] == Limits[[2]]) Limits <- Limits+c(-0.5, 0.5)
+      Palette <- viridisLite::viridis(256L, option="D")
+    }
+    graphics::layout(
+      matrix(seq_len(NumberOfSamples+1L), nrow=1L),
+      widths=c(rep(1, NumberOfSamples), 0.22)
+    )
+    graphics::par(oma=c(1.2, 0.8, 3.0, 0.5))
+    for(index in seq_len(NumberOfSamples)){
+      Matrix <- Matrices[[index]]
+      PlotMatrix <- Matrix
+      Y <- seq_len(nrow(PlotMatrix))
+      if(nrow(PlotMatrix) == 1L){
+        PlotMatrix <- rbind(PlotMatrix, PlotMatrix)
+        Y <- 1:2
+      }
+      graphics::par(mar=c(4.2, if(index == 1L) 4.2 else 1.0, 2.8, 0.7))
+      graphics::image(
+        x=Offsets/1000, y=Y, z=t(PlotMatrix),
+        col=Palette, zlim=Limits, useRaster=TRUE,
+        xaxs="i", yaxs="i", axes=FALSE,
+        xlab="Distance (kb)", ylab=""
+      )
+      graphics::axis(1, las=1, cex.axis=0.82)
+      if(index == 1L){
+        graphics::axis(
+          2, at=c(1, max(Y)), labels=c(1, nrow(Matrix)),
+          las=1, cex.axis=0.75
+        )
+        graphics::mtext("Shared row order", side=2, line=2.5, cex=0.82)
+      }
+      graphics::abline(v=0, col="white", lwd=0.65, lty=2)
+      graphics::title(main=TimePoints[[index]], cex.main=1.0, col=TimeColors[[index]])
+      graphics::box(col="gray45")
+    }
+    graphics::par(mar=c(4.2, 0.5, 2.8, 2.8))
+    LegendY <- seq(Limits[[1]], Limits[[2]], length.out=256L)
+    graphics::image(
+      x=1, y=LegendY, z=matrix(LegendY, nrow=1L),
+      col=Palette, zlim=Limits, axes=FALSE, xlab="", ylab=""
+    )
+    graphics::axis(4, las=1, cex.axis=0.72)
+    graphics::mtext(MetricLabel, side=4, line=2.0, cex=0.72)
+    graphics::mtext(
+      paste0(
+        PrettyCenterSet(center_set), " | n=", nrow(CenterTables[[center_set]]),
+        " | rows ordered by time of maximum window-mean signal"
+      ),
+      side=3, outer=TRUE, line=1.15, font=2, cex=1.05
+    )
+    graphics::mtext(
+      paste0(SeriesName, " | shared coordinates, row order, and colour scale"),
+      side=3, outer=TRUE, line=0.15, cex=0.80, col="gray35"
+    )
+  }
+  grDevices::dev.off()
+
+  ReadAnnotation <- function(file, default_type){
+    FirstLine <- readLines(file, n=1L, warn=FALSE)
+    Fields <- strsplit(trimws(FirstLine), "[[:space:]]+")[[1]]
+    HasHeader <- length(Fields) >= 3L &&
+      (is.na(suppressWarnings(as.numeric(Fields[[2]]))) ||
+       is.na(suppressWarnings(as.numeric(Fields[[3]]))))
+    Table <- data.table::fread(
+      file, header=HasHeader, sep="\t", showProgress=FALSE, data.table=TRUE
+    )
+    if(ncol(Table) < 3L){
+      stop("Annotation has fewer than three columns: ", file, call.=FALSE)
+    }
+    if(HasHeader){
+      LowerNames <- tolower(names(Table))
+      ChromColumn <- match(TRUE, LowerNames %in% c("chrom", "chr"))
+      StartColumn <- match(TRUE, LowerNames %in% c("chromstart", "start"))
+      EndColumn <- match(TRUE, LowerNames %in% c("chromend", "end"))
+      NameColumn <- match(TRUE, LowerNames %in% c("name", "feature", "gene"))
+      StrandColumn <- match(TRUE, LowerNames %in% "strand")
+      StatColumn <- match(TRUE, LowerNames %in% c("stat", "status", "timing"))
+    } else {
+      ChromColumn <- 1L
+      StartColumn <- 2L
+      EndColumn <- 3L
+      NameColumn <- if(ncol(Table) >= 4L) 4L else NA_integer_
+      StrandColumn <- if(ncol(Table) >= 6L) 6L else NA_integer_
+      StatColumn <- NA_integer_
+    }
+    if(any(is.na(c(ChromColumn, StartColumn, EndColumn)))){
+      stop("Annotation is missing coordinate columns: ", file, call.=FALSE)
+    }
+    data.table::data.table(
+      chrom=as.character(Table[[ChromColumn]]),
+      chromStart=as.numeric(Table[[StartColumn]]),
+      chromEnd=as.numeric(Table[[EndColumn]]),
+      name=if(is.na(NameColumn)) default_type else as.character(Table[[NameColumn]]),
+      strand=if(is.na(StrandColumn)) "." else as.character(Table[[StrandColumn]]),
+      stat=if(is.na(StatColumn)) "" else as.character(Table[[StatColumn]])
+    )
+  }
+  Annotations <- list(
+    ORF=ReadAnnotation(ProjectPaths$elements$orfs, "ORF"),
+    ARS=ReadAnnotation(ProjectPaths$elements$ars, "ARS"),
+    Ty=ReadAnnotation(ProjectPaths$elements$ty_elements, "Ty"),
+    TER=ReadAnnotation(ProjectPaths$elements$termination_regions, "TER"),
+    tRNA=ReadAnnotation(ProjectPaths$elements$trnas, "tRNA"),
+    Centromere=ReadAnnotation(ProjectPaths$elements$centromeres, "CEN")
+  )
+  ProfileValues <- unlist(lapply(PlotTables, function(Table){
+    Values <- Table$display_signal[is.finite(Table$display_signal)]
+    if(length(Values) == 0L) return(numeric())
+    as.numeric(stats::quantile(
+      Values, probs=c(0.005, 0.995), na.rm=TRUE, names=FALSE, type=8
+    ))
+  }), use.names=FALSE)
+  GenomeYLim <- CalculateYLimits(ProfileValues)
+  WindowBp <- WindowSizeKb*1000L
+  GenomewidePDF <- file.path(
+    PlotsDir,
+    paste0(SeriesTag, "_", Assay, "_", Alignment, "_TimeSeries_Genomewide.pdf")
+  )
+  PlotHeight <- min(15, max(9, 3.0+1.7*NumberOfSamples))
+  grDevices::pdf(GenomewidePDF, width=11.5, height=PlotHeight, useDingbats=FALSE)
+  WindowFeatures <- function(Table, chromosome, start, end){
+    Table[chrom == chromosome & chromEnd > start & chromStart < end]
+  }
+  DrawBlocks <- function(Table, chromosome, start, end, y, height, color){
+    Features <- WindowFeatures(Table, chromosome, start, end)
+    if(nrow(Features) == 0L) return(invisible(NULL))
+    graphics::rect(
+      pmax(Features$chromStart, start), y-height,
+      pmin(Features$chromEnd, end), y+height,
+      col=grDevices::adjustcolor(color, alpha.f=0.72),
+      border=color, lwd=0.35
+    )
+  }
+  PlotFeatureTrack <- function(chromosome, start, end){
+    graphics::par(mar=c(2.8, 5.0, 0.3, 1.0))
+    graphics::plot(
+      NA, xlim=c(start, end), ylim=c(0, 1),
+      axes=FALSE, xlab="", ylab="", bty="n", xaxs="i", yaxs="i"
+    )
+    ORFs <- WindowFeatures(Annotations$ORF, chromosome, start, end)
+    if(nrow(ORFs) > 0L){
+      for(index in seq_len(nrow(ORFs))){
+        X0 <- max(ORFs$chromStart[[index]], start)
+        X1 <- min(ORFs$chromEnd[[index]], end)
+        Plus <- ORFs$strand[[index]] == "+"
+        Y <- if(Plus) 0.78 else 0.62
+        Color <- if(Plus) "brown3" else "cornflowerblue"
+        if(X1 > X0){
+          suppressWarnings(graphics::arrows(
+            if(Plus) X0 else X1, Y, if(Plus) X1 else X0, Y,
+            length=0.035, angle=25, code=2, lwd=2.0, col=Color
+          ))
+        }
+      }
+    }
+    DrawBlocks(Annotations$Ty, chromosome, start, end, 0.45, 0.05, "mediumpurple3")
+    DrawBlocks(Annotations$TER, chromosome, start, end, 0.29, 0.05, "orange3")
+    DrawBlocks(Annotations$tRNA, chromosome, start, end, 0.13, 0.04, "seagreen3")
+    Origins <- WindowFeatures(Annotations$ARS, chromosome, start, end)
+    if(nrow(Origins) > 0L){
+      OriginX <- (Origins$chromStart+Origins$chromEnd)/2
+      graphics::points(OriginX, rep(0.94, length(OriginX)), pch=24,
+                       bg="yellow", col="purple", cex=0.75)
+      graphics::text(
+        OriginX, rep(0.99, length(OriginX)), labels=Origins$name,
+        srt=45, adj=0, cex=0.42, col="gray25", xpd=NA
+      )
+    }
+    graphics::axis(
+      2, at=c(0.78, 0.62, 0.45, 0.29, 0.13),
+      labels=c("ORF+", "ORF-", "Ty", "TER", "tRNA"),
+      las=2, cex.axis=0.68, tick=TRUE
+    )
+    TickBy <- max(10000, round((end-start)/5, -3))
+    Ticks <- seq(ceiling(start/TickBy)*TickBy, end, by=TickBy)
+    graphics::axis(1, at=Ticks, labels=round(Ticks/1000), las=1, cex.axis=0.78)
+    graphics::mtext("Chromosomal coordinate (kb)", side=1, line=1.75, cex=0.82)
+    graphics::box(col="gray45")
+  }
+  for(chromosome in NuclearChromosomes){
+    ChromosomeLength <- ChromosomeInfo[chrom == chromosome, length]
+    Starts <- seq.int(0L, ChromosomeLength-1L, by=WindowBp)
+    for(start in Starts){
+      End <- min(start+WindowBp, ChromosomeLength)
+      graphics::layout(
+        matrix(seq_len(NumberOfSamples+1L), ncol=1L),
+        heights=c(rep(2.5, NumberOfSamples), 1.7)
+      )
+      graphics::par(oma=c(1.1, 0.8, 3.0, 0.6))
+      for(index in seq_len(NumberOfSamples)){
+        graphics::par(mar=c(0.45, 5.0, 1.15, 1.0))
+        Signal <- PlotTables[[index]][
+          chrom == chromosome & chromStart >= start & chromStart < End
+        ]
+        graphics::plot(
+          NA, xlim=c(start, End), ylim=GenomeYLim,
+          axes=FALSE, xlab="", ylab="", bty="n", xaxs="i", yaxs="i"
+        )
+        if(nrow(Signal) > 0L){
+          X <- (Signal$chromStart+Signal$chromEnd)/2
+          Y <- SafeSmooth(X, Signal$display_signal)
+          graphics::lines(X, Y, col=TimeColors[[index]], lwd=1.35)
+        }
+        graphics::axis(2, las=1, cex.axis=0.74)
+        graphics::abline(h=Baseline, col="gray72", lty=2, lwd=0.75)
+        Peaks <- CommonGenomewidePeaks[
+          chrom == chromosome & peakEnd > start & peakStart < End
+        ]
+        if(nrow(Peaks) > 0L){
+          Height <- diff(GenomeYLim)
+          graphics::rect(
+            pmax(Peaks$peakStart, start), GenomeYLim[[2]]-0.06*Height,
+            pmin(Peaks$peakEnd, End), GenomeYLim[[2]]-0.012*Height,
+            col=grDevices::adjustcolor("firebrick2", alpha.f=0.33), border=NA
+          )
+        }
+        Centromere <- WindowFeatures(
+          Annotations$Centromere, chromosome, start, End
+        )
+        if(nrow(Centromere) > 0L){
+          CEN <- (Centromere$chromStart+Centromere$chromEnd)/2
+          graphics::abline(v=CEN, col="darkgreen", lwd=1.2)
+        }
+        graphics::mtext(
+          TimePoints[[index]], side=3, line=0.15, adj=0,
+          cex=0.82, font=2, col=TimeColors[[index]]
+        )
+        graphics::mtext(MetricLabel, side=2, line=3.35, cex=0.76)
+        graphics::box(col="gray45")
+      }
+      PlotFeatureTrack(chromosome, start, End)
+      graphics::mtext(
+        paste0(
+          SeriesName, " | ", chromosome, ":",
+          format(start, scientific=FALSE, big.mark=","), "-",
+          format(End, scientific=FALSE, big.mark=","),
+          " | coordinated strand-collapsed relative enrichment"
+        ),
+        side=3, outer=TRUE, line=1.25, font=2, cex=0.92
+      )
+      graphics::mtext(
+        paste0(
+          "Common ", PeakSet, " peak mask | chrM, rDNA and terminal 15 kb excluded from background training"
+        ),
+        side=3, outer=TRUE, line=0.25, cex=0.72, col="gray40"
+      )
+    }
+  }
+  grDevices::dev.off()
+
+  BackgroundQCPDF <- file.path(
+    PlotsDir,
+    paste0(SeriesTag, "_", Assay, "_", Alignment, "_Background_QC.pdf")
+  )
+  grDevices::pdf(BackgroundQCPDF, width=10.5, height=7.5, useDingbats=FALSE)
+  graphics::par(mfrow=c(2, 1), mar=c(4.5, 5.0, 2.5, 1.2), oma=c(0, 0, 2.2, 0))
+  ChunkCounts <- BackgroundChunks[, .N, by=chrom]
+  ChunkCounts[, chromosome_order := match(chrom, NuclearChromosomes)]
+  data.table::setorder(ChunkCounts, chromosome_order)
+  graphics::barplot(
+    ChunkCounts$N, names.arg=sub("^chr", "", ChunkCounts$chrom),
+    col="gray55", border="gray30", las=1,
+    ylab="Eligible 2-kb chunks", xlab="Chromosome",
+    main="Fixed background coordinates"
+  )
+  MedianInput <- vapply(seq_len(NumberOfSamples), function(index){
+    Values <- ChunkSummaries[[index]][
+      chunk_id %in% BackgroundChunks$chunk_id, input_median
+    ]
+    stats::median(Values, na.rm=TRUE)
+  }, numeric(1))
+  graphics::barplot(
+    MedianInput, names.arg=TimePoints,
+    col=TimeColors, border=TimeColors, las=1,
+    ylab="Median raw Input coverage", xlab="Time point",
+    main="Common-background Input signal"
+  )
+  graphics::mtext(
+    paste0(SeriesName, " | deterministic coordinated-background QC"),
+    side=3, outer=TRUE, line=0.7, font=2, cex=1.05
+  )
+  grDevices::dev.off()
+
+  ManifestFile <- file.path(OutputDir, "Analysis_Manifest.tsv")
+  Manifest <- data.table::data.table(
+    setting=c(
+      "function", "series_name", "assay", "alignment", "time_points",
+      "sample_directories", "strand_mode", "interpretation", "peak_set",
+      "reference_timepoint", "peak_buffer_bp", "background_chunk_bp",
+      "telomere_mask_bp", "rdna_mask", "common_candidate_chunks",
+      "common_eligible_chunks", "center_sets", "metric", "window_bp",
+      "genome_window_kb", "log2_values", "y_val", "ratios_directory",
+      "peaks_directory", "plots_directory"
+    ),
+    value=c(
+      "ChIP_BrDU_TimeSeries_Analysis", SeriesName, Assay, Alignment,
+      paste(TimePoints, collapse=";"), paste(SampleDirs, collapse=";"),
+      "collapsed", "relative enrichment; not absolute occupancy", PeakSet,
+      if(PeakSet == "reference") TimePoints[[ReferenceIndex]] else "NA",
+      PeakBufferBp, BackgroundChunkBp, TelomereMaskBp,
+      paste0(rDNAChromosome, ":", rDNAStart, "-", rDNAEnd),
+      nrow(CandidateChunks), nrow(BackgroundChunks),
+      paste(CenterSets, collapse=";"), Metric, Window, WindowSizeKb,
+      Log2Values, if(is.null(y_val)) "automatic" else y_val,
+      RatiosDir, PeaksDir, PlotsDir
+    )
+  )
+  data.table::fwrite(Manifest, ManifestFile, sep="\t", quote=FALSE, na="NA")
+
+  message("Time-series analysis completed: ", OutputDir)
+  invisible(list(
+    output_dir=OutputDir,
+    ratios_dir=RatiosDir,
+    peaks_dir=PeaksDir,
+    plots_dir=PlotsDir,
+    manifest=ManifestFile,
+    coordinated_ratio_files=CoordinatedRatioFiles,
+    common_peak_file=CommonPeakFile,
+    exclusion_mask_file=ExclusionMaskFile,
+    background_chunks_file=BackgroundChunksFile,
+    background_qc_table=BackgroundQCFile,
+    average_profile_table=AverageProfileFile,
+    center_time_series_table=CenterSummaryFile,
+    genomewide_pdf=GenomewidePDF,
+    average_profile_pdf=AverageProfilePDF,
+    heatmap_pdf=HeatmapPDF,
+    background_qc_pdf=BackgroundQCPDF,
+    sample_dirs=SampleDirs,
+    time_points=TimePoints,
+    assay=Assay,
+    alignment=Alignment,
+    strand_mode="collapsed",
+    peak_set=PeakSet,
+    reference_timepoint=if(PeakSet == "reference") TimePoints[[ReferenceIndex]] else NULL,
+    peak_buffer_bp=PeakBufferBp,
+    background_chunk_bp=BackgroundChunkBp,
+    telomere_mask_bp=TelomereMaskBp,
+    rdna_mask=c(chrom=rDNAChromosome, start=rDNAStart, end=rDNAEnd),
+    candidate_background_chunks=nrow(CandidateChunks),
+    eligible_background_chunks=nrow(BackgroundChunks),
+    center_sets=CenterSets,
+    center_counts=vapply(CenterTables, nrow, integer(1)),
+    problematic_centers_removed=RemovedCenterCounts,
+    metric=Metric,
+    log2_values=Log2Values,
+    y_val=y_val,
+    interpretation="relative enrichment; no absolute occupancy inference",
+    primary_outputs_overwritten=FALSE,
+    replicate_model=FALSE,
+    external_bed_input=FALSE
+  ))
+}
+
+
 ## One-call primary analysis and standard single-assay report wrapper.
 ## The wrapper does not run the whole-genome, Early/Late-only, ChIP-BrDU
 ## enrichment-comparison, or ChIP-BrDU regional-comparison plotters.
