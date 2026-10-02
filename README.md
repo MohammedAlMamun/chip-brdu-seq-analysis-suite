@@ -15,7 +15,7 @@ An R-based end-to-end analysis and visualization suite for paired-end *Saccharom
 - Statistical side-by-side boxplot comparisons for selected element or peak cohorts.
 - A focused early-versus-late origin report with comparative boxplot p-values.
 - Paired ChIP–BrDU regional and genomic-element comparisons with separate y-axes.
-- Coordinated three-to-six-point time-series denoising, profiles and heatmaps on one fixed background grid.
+- Coordinated two-to-ten-point time-series denoising, profiles and heatmaps on one fixed background grid.
 - A complete-analysis wrapper that runs primary analysis and the standard downstream report set.
 
 Plotters consume the saved ratio tables and peak calls produced by the primary analysis. They do not simulate reads, call peaks again or apply an additional noise filter. Spline smoothing is used only for graphical presentation of average profiles.

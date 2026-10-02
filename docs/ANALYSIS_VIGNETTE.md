@@ -853,7 +853,7 @@ ChIP_BrDU_Enrichment_Comparison_Plotter(
 
 ## 14. `ChIP_BrDU_TimeSeries_Analysis()`
 
-Coordinates three to six completed primary-analysis samples from an ordered ChIP or BrDU time course. It builds one common peak mask and one deterministic background grid, estimates each sample's background on those identical coordinates, and writes new coordinated ratios without changing the primary sample folders.
+Coordinates two to ten completed primary-analysis samples from an ordered ChIP or BrDU time course. It builds one common peak mask and one deterministic background grid, estimates each sample's background on those identical coordinates, and writes new coordinated ratios without changing the primary sample folders.
 
 ```r
 ChIP_BrDU_TimeSeries_Analysis(
@@ -878,7 +878,7 @@ ChIP_BrDU_TimeSeries_Analysis(
 
 | Argument | Default | Explanation |
 |---|---|---|
-| `SampleDirs` | required | Ordered vector of three to six completed primary-analysis sample directories. Every sample must use the same assay, alignment mode, reference and sliding-window coordinate grid. |
+| `SampleDirs` | required | Ordered vector of two to ten completed primary-analysis sample directories. Every sample must use the same assay, alignment mode, reference and sliding-window coordinate grid. |
 | `TimePoints` | required | Unique labels in biological order, one per sample directory. This order controls the colour gradient and all time-series panels. |
 | `Assay` | ChIP or BrDU | Selects the assay coverage, ratio and peak filenames in every completed sample. |
 | `Alignment` | generic or malign | Selects the standard or multi-alignment nuclear output folders. Dedicated `mrdna` output is outside this function. |
@@ -911,7 +911,7 @@ Each sample keeps its own assay and Input background magnitude; only the genomic
 
 `AllOrigins` reads the bundled confirmed ARS list. Peak selectors build a common cohort using the chosen `PeakSet` rule. Centres falling in `chrM`, rDNA or terminal 15-kb regions are removed from centred reports.
 
-Average-profile lines use one chronological viridis gradient and display-only spline smoothing. Heatmaps keep the same coordinates, row order and colour limits in every time-point panel; rows are ordered by the time of maximum window-mean signal. The genome-wide PDF uses one coordinate window per page, vertically stacks every time point with one shared y-axis, and places one common genomic-feature track below the stack.
+Average-profile lines use one chronological viridis gradient and display-only spline smoothing. Heatmaps keep the same coordinates, row order and colour limits in every time-point panel; rows are ordered by the time of maximum window-mean signal. Series containing seven to ten samples wrap the heatmap panels into two rows of at most five time points. The genome-wide PDF uses one coordinate window per page, vertically stacks every time point with one shared y-axis, and places one common genomic-feature track below the stack.
 
 ### Output organization
 
@@ -977,7 +977,7 @@ For a new sample:
 2. Use `ChIP_BrDU_Complete_Analysis()` for a standard end-to-end run, or `ChIP_BrDU_Primary_Analysis()` when downstream functions will be selected manually.
 3. Use the whole-genome and focused Early/Late reports for experiment-specific review.
 4. Use regional, rDNA, average-profile, boxplot, and heatmap functions to build targeted figures from the final saved ratio tables.
-5. Use `ChIP_BrDU_TimeSeries_Analysis()` after three to six compatible primary runs when the experiment has an ordered time course.
+5. Use `ChIP_BrDU_TimeSeries_Analysis()` after two to ten compatible primary runs when the experiment has an ordered time course.
 6. Use the two comparison functions only when an explicit ChIP–BrDU pair is biologically appropriate.
 
 The example calls in `Run_ChIPseq_BrDUseq_Project.R` remain the shortest laboratory interface. This vignette is the detailed reference to consult when changing an argument or interpreting a generated report.

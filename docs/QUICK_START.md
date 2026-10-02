@@ -84,7 +84,7 @@ Graphical details that should remain consistent across experiments are intention
 
 ## 7. Coordinate a completed time series
 
-Run every time point independently with the primary-analysis function first. Then supply the three to six completed sample folders in biological order:
+Run every time point independently with the primary-analysis function first. Then supply the two to ten completed sample folders in biological order:
 
 ```r
 ChIP_BrDU_TimeSeries_Analysis(

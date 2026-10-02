@@ -14678,9 +14678,9 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
     stop("The viridisLite package is required for time-series heatmaps.", call.=FALSE)
   }
 
-  if(!is.character(SampleDirs) || length(SampleDirs) < 3L ||
-     length(SampleDirs) > 6L || anyNA(SampleDirs) || any(!nzchar(SampleDirs))){
-    stop("SampleDirs must contain three to six completed sample directories.", call.=FALSE)
+  if(!is.character(SampleDirs) || length(SampleDirs) < 2L ||
+     length(SampleDirs) > 10L || anyNA(SampleDirs) || any(!nzchar(SampleDirs))){
+    stop("SampleDirs must contain two to ten completed sample directories.", call.=FALSE)
   }
   SampleDirs <- vapply(
     SampleDirs,
@@ -15746,7 +15746,10 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
     }
     graphics::legend(
       "topright", legend=TimePoints, col=TimeColors,
-      lwd=2.2, bty="n", cex=0.88, title="Time point"
+      lwd=2.2, bty="n",
+      cex=if(NumberOfSamples > 6L) 0.76 else 0.88,
+      ncol=if(NumberOfSamples > 6L) 2L else 1L,
+      title="Time point"
     )
     graphics::mtext(
       paste0(
@@ -15763,8 +15766,13 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
     PlotsDir,
     paste0(SeriesTag, "_", Assay, "_", Alignment, "_TimeSeries_Heatmaps.pdf")
   )
-  HeatmapWidth <- max(10, 3.0*NumberOfSamples+1.5)
-  grDevices::pdf(HeatmapPDF, width=HeatmapWidth, height=8.5, useDingbats=FALSE)
+  HeatmapColumns <- if(NumberOfSamples <= 6L) NumberOfSamples else 5L
+  HeatmapRows <- ceiling(NumberOfSamples/HeatmapColumns)
+  HeatmapWidth <- max(10, 3.0*HeatmapColumns+1.5)
+  HeatmapHeight <- if(HeatmapRows == 1L) 8.5 else 13.5
+  grDevices::pdf(
+    HeatmapPDF, width=HeatmapWidth, height=HeatmapHeight, useDingbats=FALSE
+  )
   for(center_set in CenterSets){
     Matrices <- CenterMatrices[[center_set]]
     RowMeans <- vapply(
@@ -15797,12 +15805,25 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
       if(Limits[[1]] == Limits[[2]]) Limits <- Limits+c(-0.5, 0.5)
       Palette <- viridisLite::viridis(256L, option="D")
     }
+    HeatmapSlots <- matrix(
+      c(
+        seq_len(NumberOfSamples),
+        rep(0L, HeatmapRows*HeatmapColumns-NumberOfSamples)
+      ),
+      nrow=HeatmapRows, byrow=TRUE
+    )
+    HeatmapLayout <- cbind(
+      HeatmapSlots,
+      rep(NumberOfSamples+1L, HeatmapRows)
+    )
     graphics::layout(
-      matrix(seq_len(NumberOfSamples+1L), nrow=1L),
-      widths=c(rep(1, NumberOfSamples), 0.22)
+      HeatmapLayout,
+      widths=c(rep(1, HeatmapColumns), 0.22),
+      heights=rep(1, HeatmapRows)
     )
     graphics::par(oma=c(1.2, 0.8, 3.0, 0.5))
     for(index in seq_len(NumberOfSamples)){
+      HeatmapColumn <- ((index-1L) %% HeatmapColumns)+1L
       Matrix <- Matrices[[index]]
       PlotMatrix <- Matrix
       Y <- seq_len(nrow(PlotMatrix))
@@ -15810,7 +15831,7 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
         PlotMatrix <- rbind(PlotMatrix, PlotMatrix)
         Y <- 1:2
       }
-      graphics::par(mar=c(4.2, if(index == 1L) 4.2 else 1.0, 2.8, 0.7))
+      graphics::par(mar=c(4.2, if(HeatmapColumn == 1L) 4.2 else 1.0, 2.8, 0.7))
       graphics::image(
         x=Offsets/1000, y=Y, z=t(PlotMatrix),
         col=Palette, zlim=Limits, useRaster=TRUE,
@@ -15818,7 +15839,7 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
         xlab="Distance (kb)", ylab=""
       )
       graphics::axis(1, las=1, cex.axis=0.82)
-      if(index == 1L){
+      if(HeatmapColumn == 1L){
         graphics::axis(
           2, at=c(1, max(Y)), labels=c(1, nrow(Matrix)),
           las=1, cex.axis=0.75
@@ -16068,6 +16089,7 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
   graphics::barplot(
     MedianInput, names.arg=TimePoints,
     col=TimeColors, border=TimeColors, las=1,
+    cex.names=if(NumberOfSamples > 6L) 0.72 else 0.85,
     ylab="Median raw Input coverage", xlab="Time point",
     main="Common-background Input signal"
   )

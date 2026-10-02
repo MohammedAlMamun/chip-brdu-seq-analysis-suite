@@ -114,7 +114,7 @@ ChIP_BrDU_Genomic_Element_Heatmap_Plotter( SampleDir=CHIP_SAMPLE_DIR,
                                            Log2Values=TRUE,
                                            OrderBy="ratio.ipin.noise" )
 
-## Uses three to six completed time-point sample folders.
+## Uses two to ten completed time-point sample folders.
 ChIP_BrDU_TimeSeries_Analysis( SampleDirs=c("/full/path/to/G1",
                                             "/full/path/to/10min",
                                             "/full/path/to/20min"),
@@ -223,7 +223,7 @@ ChIP_BrDU_Genomic_Element_Heatmap_Plotter( SampleDir=BRDU_SAMPLE_DIR,
                                            Log2Values=TRUE,
                                            OrderBy="ratio.ipin.noise" )
 
-## Uses three to six completed time-point sample folders.
+## Uses two to ten completed time-point sample folders.
 ChIP_BrDU_TimeSeries_Analysis( SampleDirs=c("/full/path/to/0min",
                                             "/full/path/to/15min",
                                             "/full/path/to/30min"),
