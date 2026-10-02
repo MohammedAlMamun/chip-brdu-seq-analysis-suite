@@ -21,7 +21,7 @@ For argument-by-argument guidance and complete call examples, see the [complete 
 | `ChIP_BrDU_Genomic_Element_Enrichment_Plotter()` | 1 | collapsed, separated | Average profiles for curated features or saved peak classes. |
 | `ChIP_BrDU_Early_Late_Enrichment_Plotter()` | 1 | collapsed, separated | Focused Early/Late report with individual profiles, paired profiles and comparative boxplots with Wilcoxon p-values. |
 | `ChIP_BrDU_Genomic_Element_Boxplotter()` | 1 | collapsed | Element-centred distributions plus a final single-metric statistical comparison of all selected cohorts. |
-| `ChIP_BrDU_Genomic_Element_Heatmap_Plotter()` | 1 | collapsed | Publication-oriented heatmaps ordered by a selected metric. |
+| `ChIP_BrDU_Genomic_Element_Heatmap_Plotter()` | 1 | collapsed | Publication-oriented option-C viridis heatmaps with optional centered `x_lim` cropping and manual `z_lim` saturation. |
 | `ChIP_BrDU_TimeSeries_Analysis()` | 2–10 | collapsed | Re-estimates time-point backgrounds on one fixed coordinate grid and produces coordinated ratios, stacked genome-wide profiles, average profiles and heatmaps. |
 
 ## Direct ChIP–BrDU comparisons

@@ -686,7 +686,9 @@ ChIP_BrDU_Genomic_Element_Heatmap_Plotter(
   Window=3000,
   Log2Values=TRUE,
   OrderBy="ratio.ipin.noise",
-  OutputDir=NULL
+  OutputDir=NULL,
+  x_lim=NULL,
+  z_lim=NULL
 )
 ```
 
@@ -701,12 +703,14 @@ ChIP_BrDU_Genomic_Element_Heatmap_Plotter(
 | `Metric` | `"all"` | Selects `"all"`, one metric, or a vector of unique metrics to arrange in one horizontal row. |
 | `Window` | `3000` | Positive half-window in base pairs around each feature midpoint or peak summit. |
 | `Log2Values` | `TRUE` | Uses `log2(1+x)` for coverage and `log2(x)` for positive ratio values when `TRUE`; raw values are retained when `FALSE`. |
-| `OrderBy` | `"ratio.ipin.noise"` | Orders rows by decreasing mean of one final metric across the window. Use `"genomic"` to retain nuclear chromosome and coordinate order. |
+| `OrderBy` | `"ratio.ipin.noise"` | Orders rows by decreasing mean of one final metric across the complete extracted `Window`. Use `"genomic"` to retain nuclear chromosome and coordinate order. |
 | `OutputDir` | `NULL` | PDF destination; `NULL` writes to `SampleDir`. |
+| `x_lim` | `NULL` | Optional symmetric plotted half-width in base pairs. It must not exceed `Window` and must be divisible by the saved sliding-window step. It crops only the plotted view; extraction and row ordering still use the complete `Window`. |
+| `z_lim` | `NULL` | Optional positive display-saturation limit. One value applies to every selected metric; an unnamed vector follows `Metric` order; a named vector can override selected metrics, for example `c(ip.score=8, ratio.ipin.noise=2)`. Log2 ratio metrics use symmetric `-z_lim` to `+z_lim`; other displays use `0` to `z_lim`. |
 
 ### Display behavior
 
-Heatmaps use no spline smoothing, row normalization, or row clustering. The second and ninety-eighth percentiles provide display-only color saturation, and each metric keeps one common color scale across all selected cohort pages. Returned matrices retain the full values.
+Heatmaps use no spline smoothing, row normalization, or row clustering. They reproduce the older Loli-edited enrichment heatmap palette exactly: 100 colors from viridis option `"C"` (plasma), for both ChIP and BrDU. When `z_lim=NULL`, the second and ninety-eighth percentiles provide display-only color saturation; supplied limits replace that automatic scale. Each metric keeps one common color scale across all selected cohort pages. `x_lim` and `z_lim` affect only presentation, and returned matrices retain the full extracted values.
 
 ### Result
 
@@ -723,7 +727,14 @@ ChIP_BrDU_Genomic_Element_Heatmap_Plotter(
   Metric="all",
   Window=3000,
   Log2Values=TRUE,
-  OrderBy="ratio.ipin.noise"
+  OrderBy="ratio.ipin.noise",
+  x_lim=2000,
+  z_lim=c(
+    ip.score=8,
+    ratio.ipin=2,
+    ratio.ipnoise=3,
+    ratio.ipin.noise=2
+  )
 )
 ```
 

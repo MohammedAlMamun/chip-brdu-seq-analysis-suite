@@ -8028,11 +8028,14 @@ ChIP_BrDU_Genomic_Element_Boxplotter <- function(
 ## EarlyOriginPeaks, and LateOriginPeaks.
 ##
 ## By default, rows are ordered independently within each cohort by decreasing
-## mean clean enrichment across the displayed window. OrderBy="genomic" retains
+## mean clean enrichment across the complete extracted Window. OrderBy="genomic" retains
 ## nuclear chromosome and midpoint order; any of the four final metrics can be
 ## used instead. Every metric keeps one shared robust colour scale across all
-## selected cohort pages. The 2nd and 98th percentiles define display-only
-## saturation limits, while the returned matrices preserve the complete values.
+## selected cohort pages. By default, the 2nd and 98th percentiles define
+## display-only saturation limits. x_lim can crop the plotted view symmetrically
+## within the extracted Window, and z_lim can override colour saturation. These
+## controls never change the returned matrices. Colours reproduce the legacy
+## enrichment heatmap's 100-colour viridis option-C (plasma) palette.
 ##
 ## Example:
 ## ChIP_BrDU_Genomic_Element_Heatmap_Plotter(
@@ -8043,7 +8046,10 @@ ChIP_BrDU_Genomic_Element_Boxplotter <- function(
 ##   Metric="all",
 ##   Window=3000,
 ##   Log2Values=TRUE,
-##   OrderBy="ratio.ipin.noise"
+##   OrderBy="ratio.ipin.noise",
+##   x_lim=2000,
+##   z_lim=c(ip.score=8, ratio.ipin=2, ratio.ipnoise=3,
+##           ratio.ipin.noise=2)
 ## )
 ChIP_BrDU_Genomic_Element_Heatmap_Plotter <- function(
     SampleDir,
@@ -8054,7 +8060,9 @@ ChIP_BrDU_Genomic_Element_Heatmap_Plotter <- function(
     Window=3000,
     Log2Values=TRUE,
     OrderBy="ratio.ipin.noise",
-    OutputDir=NULL){
+    OutputDir=NULL,
+    x_lim=NULL,
+    z_lim=NULL){
 
   AllMetrics <- c(
     "ip.score", "ratio.ipin", "ratio.ipnoise", "ratio.ipin.noise"
@@ -8177,6 +8185,50 @@ ChIP_BrDU_Genomic_Element_Heatmap_Plotter <- function(
     stop("Window must be one positive whole number of base pairs.", call.=FALSE)
   }
   Window <- as.integer(round(Window))
+  if(!is.null(x_lim)){
+    if(length(x_lim) != 1L || !is.numeric(x_lim) || !is.finite(x_lim) ||
+       x_lim <= 0 || abs(x_lim-round(x_lim)) > sqrt(.Machine$double.eps)){
+      stop("x_lim must be NULL or one positive whole number of base pairs.", call.=FALSE)
+    }
+    x_lim <- as.integer(round(x_lim))
+    if(x_lim > Window){
+      stop("x_lim cannot exceed Window (", Window, " bp).", call.=FALSE)
+    }
+  }
+
+  ManualZLimits <- stats::setNames(rep(NA_real_, length(PlotMetrics)), PlotMetrics)
+  if(!is.null(z_lim)){
+    if(!is.numeric(z_lim) || length(z_lim) == 0L ||
+       anyNA(z_lim) || any(!is.finite(z_lim)) || any(z_lim <= 0)){
+      stop("z_lim must be NULL or contain only positive finite numbers.", call.=FALSE)
+    }
+    ZLimitNames <- names(z_lim)
+    if(!is.null(ZLimitNames)){
+      if(anyNA(ZLimitNames) || any(!nzchar(ZLimitNames)) ||
+         anyDuplicated(ZLimitNames)){
+        stop("Named z_lim values must have unique non-empty metric names.", call.=FALSE)
+      }
+      InvalidZLimitNames <- setdiff(ZLimitNames, PlotMetrics)
+      if(length(InvalidZLimitNames) > 0L){
+        stop(
+          "Named z_lim metric(s) are not selected for plotting: ",
+          paste(InvalidZLimitNames, collapse=", "),
+          call.=FALSE
+        )
+      }
+      ManualZLimits[ZLimitNames] <- as.numeric(z_lim)
+    } else if(length(z_lim) == 1L){
+      ManualZLimits[] <- as.numeric(z_lim)
+    } else if(length(z_lim) == length(PlotMetrics)){
+      ManualZLimits[] <- as.numeric(z_lim)
+    } else {
+      stop(
+        "An unnamed z_lim must contain one value or one value per plotted metric. ",
+        "Use metric names to override only selected scales.",
+        call.=FALSE
+      )
+    }
+  }
 
   if(is.null(OutputDir)){
     OutputDir <- SampleDir
@@ -8513,8 +8565,19 @@ ChIP_BrDU_Genomic_Element_Heatmap_Plotter <- function(
       call.=FALSE
     )
   }
+  if(!is.null(x_lim) &&
+     abs(x_lim/Step-round(x_lim/Step)) > sqrt(.Machine$double.eps)){
+    stop(
+      "x_lim (", x_lim, " bp) must be an exact multiple of the inferred ",
+      "sliding-window step (", Step, " bp).",
+      call.=FALSE
+    )
+  }
 
   Offsets <- seq.int(-Window, Window, by=Step)
+  DisplayHalfWindow <- if(is.null(x_lim)) Window else x_lim
+  DisplayColumnIndex <- which(abs(Offsets) <= DisplayHalfWindow)
+  DisplayOffsets <- Offsets[DisplayColumnIndex]
   OffsetRows <- seq.int(-Window/Step, Window/Step)
   Ratio[, ratioRow := seq_len(.N), by=chrom]
   Ratio[, binCenter := chromStart+(chromEnd-chromStart)/2]
@@ -8743,30 +8806,17 @@ ChIP_BrDU_Genomic_Element_Heatmap_Plotter <- function(
     }
   }
 
-  SequentialPalette <- viridisLite::viridis(
-    256L,
-    option="D",
+  ## This exactly matches viridis::viridis(100, option="C") used by the
+  ## legacy Loli-edited enrichment heatmap, while retaining viridisLite as the
+  ## suite's lightweight colour dependency.
+  LegacyEnrichmentPalette <- viridisLite::viridis(
+    100L,
+    option="C",
     direction=1
   )
-  MakoColors <- viridisLite::mako(256L)
-  RocketColors <- viridisLite::rocket(256L)
-  DivergingPalette <- grDevices::colorRampPalette(
-    c(MakoColors[[120]], "#F7F7F7", RocketColors[[160]]),
-    space="Lab"
-  )(256L)
-  PaletteForMetric <- function(metric){
-    if(Log2Values && metric != "ip.score"){
-      DivergingPalette
-    } else {
-      SequentialPalette
-    }
-  }
+  PaletteForMetric <- function(metric) LegacyEnrichmentPalette
   PaletteNameForMetric <- function(metric){
-    if(Log2Values && metric != "ip.score"){
-      "viridis-derived mako-neutral-rocket diverging"
-    } else {
-      "viridis sequential"
-    }
+    "viridis option C (plasma), 100 colours"
   }
 
   ColorLimits <- data.table::rbindlist(
@@ -8797,36 +8847,49 @@ ChIP_BrDU_Genomic_Element_Heatmap_Plotter <- function(
           names=FALSE,
           type=8
         ))
-        if(Log2Values && metric != "ip.score"){
-          MaximumAbsolute <- max(abs(Robust))
-          if(!is.finite(MaximumAbsolute) || MaximumAbsolute == 0){
-            MaximumAbsolute <- max(abs(FiniteValues))
+        ManualLimit <- ManualZLimits[[metric]]
+        if(is.finite(ManualLimit)){
+          if(Log2Values && metric != "ip.score"){
+            Lower <- -ManualLimit
+            Upper <- ManualLimit
+          } else {
+            Lower <- 0
+            Upper <- ManualLimit
           }
-          if(!is.finite(MaximumAbsolute) || MaximumAbsolute == 0){
-            MaximumAbsolute <- 1
-          }
-          Lower <- -MaximumAbsolute
-          Upper <- MaximumAbsolute
+          ScaleSource <- "manual z_lim"
         } else {
-          Lower <- Robust[[1]]
-          Upper <- Robust[[2]]
-          Baseline <- MetricBaseline(metric)
-          if(is.finite(Baseline)){
-            Lower <- min(Lower, Baseline)
-            Upper <- max(Upper, Baseline)
+          if(Log2Values && metric != "ip.score"){
+            MaximumAbsolute <- max(abs(Robust))
+            if(!is.finite(MaximumAbsolute) || MaximumAbsolute == 0){
+              MaximumAbsolute <- max(abs(FiniteValues))
+            }
+            if(!is.finite(MaximumAbsolute) || MaximumAbsolute == 0){
+              MaximumAbsolute <- 1
+            }
+            Lower <- -MaximumAbsolute
+            Upper <- MaximumAbsolute
+          } else {
+            Lower <- Robust[[1]]
+            Upper <- Robust[[2]]
+            Baseline <- MetricBaseline(metric)
+            if(is.finite(Baseline)){
+              Lower <- min(Lower, Baseline)
+              Upper <- max(Upper, Baseline)
+            }
+            if(!is.finite(Lower) || !is.finite(Upper)){
+              stop(
+                "Could not calculate finite colour limits for metric: ",
+                metric,
+                call.=FALSE
+              )
+            }
+            if(Lower == Upper){
+              Padding <- max(0.5, abs(Lower)*0.10)
+              Lower <- Lower-Padding
+              Upper <- Upper+Padding
+            }
           }
-          if(!is.finite(Lower) || !is.finite(Upper)){
-            stop(
-              "Could not calculate finite colour limits for metric: ",
-              metric,
-              call.=FALSE
-            )
-          }
-          if(Lower == Upper){
-            Padding <- max(0.5, abs(Lower)*0.10)
-            Lower <- Lower-Padding
-            Upper <- Upper+Padding
-          }
+          ScaleSource <- "automatic 2nd-98th percentile"
         }
         data.table::data.table(
           metric=metric,
@@ -8839,6 +8902,7 @@ ChIP_BrDU_Genomic_Element_Heatmap_Plotter <- function(
           n_clipped_low=sum(FiniteValues < Lower),
           n_clipped_high=sum(FiniteValues > Upper),
           palette=PaletteNameForMetric(metric),
+          scale_source=ScaleSource,
           missing_color=MissingColor
         )
       }
@@ -8911,7 +8975,9 @@ ChIP_BrDU_Genomic_Element_Heatmap_Plotter <- function(
   }, add=TRUE)
 
   PlotHeatmapPanel <- function(element_class, metric, show_y_axis=FALSE){
-    Matrix <- DisplayHeatmaps[[element_class]][[metric]]
+    Matrix <- DisplayHeatmaps[[element_class]][[metric]][
+      , DisplayColumnIndex, drop=FALSE
+    ]
     TargetMetric <- metric
     Limits <- ColorLimits[base::which(ColorLimits$metric == TargetMetric)]
     Lower <- Limits$lower[[1]]
@@ -8938,7 +9004,7 @@ ChIP_BrDU_Genomic_Element_Heatmap_Plotter <- function(
       tcl=-0.23
     )
     graphics::image(
-      x=Offsets/1000,
+      x=DisplayOffsets/1000,
       y=seq_len(NumberElements),
       z=t(ReversedMatrix),
       col=PlotColors,
@@ -8952,7 +9018,7 @@ ChIP_BrDU_Genomic_Element_Heatmap_Plotter <- function(
       yaxs="i",
       cex.main=1.02
     )
-    XTicks <- seq(-Window, Window, length.out=5L)/1000
+    XTicks <- seq(-DisplayHalfWindow, DisplayHalfWindow, length.out=5L)/1000
     graphics::axis(
       1,
       at=XTicks,
@@ -9106,7 +9172,13 @@ ChIP_BrDU_Genomic_Element_Heatmap_Plotter <- function(
         SampleName, " | ", Assay, " | ", Alignment,
         " | collapsed | ",
         if(Log2Values) "log2 display" else "untransformed display",
-        " | +/-", format(Window, big.mark=","), " bp | ordered by ",
+        " | +/-", format(DisplayHalfWindow, big.mark=","), " bp view",
+        if(DisplayHalfWindow < Window){
+          paste0(" from +/-", format(Window, big.mark=","), " bp extraction")
+        } else {
+          ""
+        },
+        " | ordered by ",
         if(OrderBy == "genomic") "genomic position" else OrderBy
       ),
       outer=TRUE,
@@ -9130,10 +9202,16 @@ ChIP_BrDU_Genomic_Element_Heatmap_Plotter <- function(
     elements=SelectedElements,
     metrics=PlotMetrics,
     window=Window,
+    x_lim=x_lim,
+    display_half_window=DisplayHalfWindow,
+    z_lim=z_lim,
+    resolved_z_limits=ManualZLimits,
     step=Step,
     bin_width=BinWidth,
     offsets=Offsets,
+    display_offsets=DisplayOffsets,
     expected_bins_per_element=length(Offsets),
+    displayed_bins_per_element=length(DisplayOffsets),
     log2_values=Log2Values,
     display_transform=if(Log2Values){
       "log2(1+x) for ip.score; log2(x) for positive ratio values; non-positive ratios shown as missing"
@@ -9141,7 +9219,7 @@ ChIP_BrDU_Genomic_Element_Heatmap_Plotter <- function(
       "untransformed"
     },
     order_by=OrderBy,
-    order_direction=if(OrderBy == "genomic") "nuclear genomic order" else "decreasing mean across displayed window",
+    order_direction=if(OrderBy == "genomic") "nuclear genomic order" else "decreasing mean across complete extracted Window",
     ratio_file=RatioFile,
     ratio_chrM_rows_omitted=RatioChrMOmitted,
     element_files=ElementFiles,
@@ -9187,8 +9265,10 @@ ChIP_BrDU_Genomic_Element_Heatmap_Plotter <- function(
     ),
     display_operations=c(
       element_midpoint_window_extraction=TRUE,
+      centered_x_lim_cropping=!is.null(x_lim),
       metric_log_transformation=Log2Values,
-      robust_color_saturation=TRUE,
+      robust_color_saturation=is.null(z_lim) || any(!is.finite(ManualZLimits)),
+      manual_z_lim_saturation=any(is.finite(ManualZLimits)),
       shared_metric_color_scale=TRUE,
       raster_heatmap_cells=TRUE,
       vector_text_and_axes=TRUE
