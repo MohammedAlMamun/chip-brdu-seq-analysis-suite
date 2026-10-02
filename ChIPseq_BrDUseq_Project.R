@@ -16260,6 +16260,8 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
 ## ProfileElements=NULL retains all curated cohorts in the profile report;
 ## Elements controls the boxplot and heatmap cohorts. Either may use the five
 ## sample-specific *Peaks selectors documented by the individual plotters.
+## HeatmapXLim and HeatmapZLim forward the optional display-only x_lim and z_lim
+## controls to the genomic-element heatmap stage.
 ##
 ## Example:
 ## ChIP_BrDU_Complete_Analysis(
@@ -16270,7 +16272,10 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
 ##   Assay="ChIP",
 ##   Alignment="generic",
 ##   ExpTitle="Smc5",
-##   Directory="/path/to/ChIP_results"
+##   Directory="/path/to/ChIP_results",
+##   HeatmapXLim=2000,
+##   HeatmapZLim=c(ip.score=10, ratio.ipin=3, ratio.ipnoise=5,
+##                 ratio.ipin.noise=4)
 ## )
 ChIP_BrDU_Complete_Analysis <- function(
     Input_R1="/full/path/to/file_R1.fastq.gz",
@@ -16286,7 +16291,9 @@ ChIP_BrDU_Complete_Analysis <- function(
     Elements=c("EarlyOrigin", "LateOrigin"),
     Regions=NULL,
     ReportDir=NULL,
-    ProfileElements=NULL){
+    ProfileElements=NULL,
+    HeatmapXLim=NULL,
+    HeatmapZLim=NULL){
 
   Assay <- match.arg(Assay)
   Alignment <- match.arg(Alignment)
@@ -16301,6 +16308,67 @@ ChIP_BrDU_Complete_Analysis <- function(
       stop(name, " must be one non-empty value.", call.=FALSE)
     }
     as.character(value)
+  }
+
+  if(!is.null(HeatmapXLim)){
+    if(length(HeatmapXLim) != 1L || !is.numeric(HeatmapXLim) ||
+       !is.finite(HeatmapXLim) || HeatmapXLim <= 0 ||
+       abs(HeatmapXLim-round(HeatmapXLim)) > sqrt(.Machine$double.eps)){
+      stop(
+        "HeatmapXLim must be NULL or one positive whole number of base pairs.",
+        call.=FALSE
+      )
+    }
+    HeatmapXLim <- as.integer(round(HeatmapXLim))
+    if(HeatmapXLim > 3000L){
+      stop(
+        "HeatmapXLim cannot exceed the complete-run heatmap Window (3000 bp).",
+        call.=FALSE
+      )
+    }
+  }
+  if(!is.null(HeatmapZLim)){
+    if(!is.numeric(HeatmapZLim) || length(HeatmapZLim) == 0L ||
+       anyNA(HeatmapZLim) || any(!is.finite(HeatmapZLim)) ||
+       any(HeatmapZLim <= 0)){
+      stop(
+        "HeatmapZLim must be NULL or contain only positive finite numbers.",
+        call.=FALSE
+      )
+    }
+    HeatmapMetrics <- c(
+      "ip.score", "ratio.ipin", "ratio.ipnoise", "ratio.ipin.noise"
+    )
+    HeatmapZNames <- names(HeatmapZLim)
+    if(!is.null(HeatmapZNames)){
+      if(anyNA(HeatmapZNames) || any(!nzchar(HeatmapZNames)) ||
+         anyDuplicated(HeatmapZNames)){
+        stop(
+          "Named HeatmapZLim values must have unique non-empty metric names.",
+          call.=FALSE
+        )
+      }
+      InvalidHeatmapZNames <- setdiff(HeatmapZNames, HeatmapMetrics)
+      if(length(InvalidHeatmapZNames) > 0L){
+        stop(
+          "Unsupported HeatmapZLim metric name(s): ",
+          paste(InvalidHeatmapZNames, collapse=", "),
+          call.=FALSE
+        )
+      }
+    } else if(!length(HeatmapZLim) %in% c(1L, length(HeatmapMetrics))){
+      stop(
+        "An unnamed HeatmapZLim must contain one value or four metric values.",
+        call.=FALSE
+      )
+    }
+  }
+  if(Alignment == "mrdna" &&
+     (!is.null(HeatmapXLim) || !is.null(HeatmapZLim))){
+    stop(
+      "HeatmapXLim and HeatmapZLim apply only to generic or malign complete runs.",
+      call.=FALSE
+    )
   }
 
   FastqPaths <- c(
@@ -16631,7 +16699,9 @@ ChIP_BrDU_Complete_Analysis <- function(
         Assay=Assay,
         Alignment=Alignment,
         Elements=Elements,
-        OutputDir=HeatmapDir
+        OutputDir=HeatmapDir,
+        x_lim=HeatmapXLim,
+        z_lim=HeatmapZLim
       )
     )
 
@@ -16721,6 +16791,8 @@ ChIP_BrDU_Complete_Analysis <- function(
     manifest=Manifest,
     pdfs=CompletedPdfs,
     results=Results,
-    complete=nrow(FailedRows) == 0L
+    complete=nrow(FailedRows) == 0L,
+    heatmap_x_lim=HeatmapXLim,
+    heatmap_z_lim=HeatmapZLim
   ))
 }

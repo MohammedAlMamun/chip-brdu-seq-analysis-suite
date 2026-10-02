@@ -16,6 +16,7 @@ All notable changes to this project will be documented here.
 
 - The run script and documentation now include explicit ChIP and BrDU time-series calls and interpretation guidance.
 - Genomic-element heatmaps now reproduce the legacy enrichment palette with 100 viridis option-C colors and accept display-only `x_lim` and `z_lim` controls.
+- `ChIP_BrDU_Complete_Analysis()` now forwards optional `HeatmapXLim` and `HeatmapZLim` values to its genomic-element heatmap stage.
 
 ## [1.0.0-rc1] - 2026-08-24
 

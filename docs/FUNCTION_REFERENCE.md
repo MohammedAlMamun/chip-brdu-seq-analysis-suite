@@ -8,7 +8,7 @@ For argument-by-argument guidance and complete call examples, see the [complete 
 |---|---|
 | `ChIP_BrDU_Project_Paths()` | Resolves and validates the script-relative support folder. |
 | `ChIP_BrDU_Primary_Analysis()` | Runs primary ChIP or BrDU processing for `generic`, `malign` or `mrdna`. |
-| `ChIP_BrDU_Complete_Analysis()` | Runs primary analysis and the standard downstream report suite, recording a concise manifest. |
+| `ChIP_BrDU_Complete_Analysis()` | Runs primary analysis and the standard downstream report suite, recording a concise manifest and forwarding optional heatmap x/z display limits. |
 
 ## Profile and enrichment reports
 

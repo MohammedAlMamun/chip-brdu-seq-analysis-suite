@@ -230,7 +230,9 @@ ChIP_BrDU_Complete_Analysis(
   Elements=c("EarlyOrigin", "LateOrigin"),
   Regions=NULL,
   ReportDir=NULL,
-  ProfileElements=NULL
+  ProfileElements=NULL,
+  HeatmapXLim=NULL,
+  HeatmapZLim=NULL
 )
 ```
 
@@ -252,10 +254,12 @@ ChIP_BrDU_Complete_Analysis(
 | `Regions` | `NULL` | Optional data frame with `Chromosome`, `RegionStart`, and `RegionEnd` columns. Each row generates regional reports in the requested strand modes; it is not allowed with `mrdna`. |
 | `ReportDir` | `NULL` | Destination for report subfolders and `Analysis_Manifest.tsv`. `NULL` creates `Complete_Analysis_Reports` inside the sample directory. |
 | `ProfileElements` | `NULL` | Cohorts used by the genomic-element average-profile report. `NULL` requests the full curated set; a character vector may select curated elements or saved peak cohorts. |
+| `HeatmapXLim` | `NULL` | Optional centered genomic-element heatmap half-width in base pairs. The complete run extracts the standard +/-3,000-bp heatmap window, so this value must be no greater than 3,000 and must match the saved sliding-window step. |
+| `HeatmapZLim` | `NULL` | Optional genomic-element heatmap saturation limit. One positive value applies to all four metrics, while a named vector can set separate values such as `c(ip.score=10, ratio.ipin=3, ratio.ipnoise=5, ratio.ipin.noise=4)`. |
 
 ### Included and excluded reports
 
-For `generic` or `malign`, the wrapper runs peak enrichment, genomic-element enrichment, genomic-element boxplots, genomic-element heatmaps, and any requested regional profiles. For `mrdna`, it runs the exact rDNA profiles.
+For `generic` or `malign`, the wrapper runs peak enrichment, genomic-element enrichment, genomic-element boxplots, genomic-element heatmaps, and any requested regional profiles. `HeatmapXLim` and `HeatmapZLim` are forwarded only to the genomic-element heatmap report and do not alter its extracted matrices or primary results. For `mrdna`, the wrapper runs the exact rDNA profiles and therefore does not accept these heatmap controls.
 
 The wrapper deliberately excludes whole-genome plotting, the focused Early/Late-only report, and both direct ChIP–BrDU comparison functions because those require experiment-specific choices.
 
@@ -276,6 +280,13 @@ run <- ChIP_BrDU_Complete_Analysis(
   ExpTitle="Smc5_60HU",
   Directory="/data/analysis",
   Elements=c("EarlyOrigin", "LateOrigin", "OriginPeaks"),
+  HeatmapXLim=2000,
+  HeatmapZLim=c(
+    ip.score=10,
+    ratio.ipin=3,
+    ratio.ipnoise=5,
+    ratio.ipin.noise=4
+  ),
   Regions=data.frame(
     Chromosome="chrIV",
     RegionStart=400000,

@@ -9,7 +9,8 @@ local({frame_files <- vapply(sys.frames(), function(frame) if(is.null(frame$ofil
 ## BLOCK 2 — COMPLETE ANALYSIS: FASTQs TO THE STANDARD REPORT SET
 ## Edit paths and settings, then run. Keep Regions=NULL unless needed.
 ## Elements controls boxplots/heatmaps; optional ProfileElements controls
-## average profiles. Peak selectors are listed in Blocks 3 and 4.
+## average profiles. HeatmapXLim/HeatmapZLim are optional display controls.
+## Peak selectors are listed in Blocks 3 and 4.
 ###############################################################################
 ChIP_BrDU_Complete_Analysis( Input_R1="/full/path/to/input_R1.fastq.gz",
                              Input_R2="/full/path/to/input_R2.fastq.gz",
@@ -21,7 +22,9 @@ ChIP_BrDU_Complete_Analysis( Input_R1="/full/path/to/input_R1.fastq.gz",
                              Directory="/full/path/to/ChIP_results",
                              StrandModes=c("collapsed", "separated"),
                              Elements=c("EarlyOrigin", "LateOrigin"),
-                             Regions=NULL )
+                             Regions=NULL,
+                             HeatmapXLim=NULL,
+                             HeatmapZLim=NULL )
 
 
 ###############################################################################

@@ -82,7 +82,9 @@ ChIP_BrDU_Complete_Analysis(
   Directory="/full/path/to/ChIP_results",
   StrandModes=c("collapsed", "separated"),
   Elements=c("EarlyOrigin", "LateOrigin"),
-  Regions=NULL
+  Regions=NULL,
+  HeatmapXLim=NULL,
+  HeatmapZLim=NULL
 )
 ```
 
