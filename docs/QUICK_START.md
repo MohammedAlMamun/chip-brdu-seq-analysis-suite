@@ -77,6 +77,7 @@ Multiple completed sample directories may be supplied to the region and rDNA plo
 - `Log2Profile` or `Log2Values` controls transformation where supported.
 - `HeatmapXLim` and `HeatmapZLim` pass centered x-axis cropping and color-saturation limits from a complete run to its genomic-element heatmap report.
 - `y_val` fixes the plotting range when automatic scaling needs visual adjustment.
+- `y_lim` sets explicit lower and upper limits in the peak, genomic-element and Early/Late enrichment reports; it accepts one shared range or a named range per metric.
 - `y_val_chip` and `y_val_brdu` independently control paired comparison axes.
 - `PlotStyle` selects histogram-style bars or lines in regional/profile functions that expose it.
 - `OutputDir` redirects reports without changing the input sample directory.

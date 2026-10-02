@@ -82,7 +82,8 @@ ChIP_BrDU_Peak_Enrichment_Plotter( SampleDir=CHIP_SAMPLE_DIR,
                                    Alignment=CHIP_ALIGNMENT,
                                    StrandMode="collapsed",
                                    Log2Profile=FALSE,
-                                   Window=3000 )
+                                   Window=3000,
+                                   y_lim=NULL )
 
 ChIP_BrDU_Genomic_Element_Enrichment_Plotter( SampleDir=CHIP_SAMPLE_DIR,
                                               Assay="ChIP",
@@ -90,14 +91,16 @@ ChIP_BrDU_Genomic_Element_Enrichment_Plotter( SampleDir=CHIP_SAMPLE_DIR,
                                               StrandMode="collapsed",
                                               Elements=NULL,
                                               Log2Profile=FALSE,
-                                              Window=3000 )
+                                              Window=3000,
+                                              y_lim=NULL )
 
 ChIP_BrDU_Early_Late_Enrichment_Plotter( SampleDir=CHIP_SAMPLE_DIR,
                                          Assay="ChIP",
                                          Alignment=CHIP_ALIGNMENT,
                                          StrandMode="collapsed",
                                          Log2Profile=FALSE,
-                                         Window=3000 )
+                                         Window=3000,
+                                         y_lim=NULL )
 
 ChIP_BrDU_Genomic_Element_Boxplotter( SampleDir=CHIP_SAMPLE_DIR,
                                       Assay="ChIP",
@@ -193,7 +196,8 @@ ChIP_BrDU_Peak_Enrichment_Plotter( SampleDir=BRDU_SAMPLE_DIR,
                                    Alignment=BRDU_ALIGNMENT,
                                    StrandMode="collapsed",
                                    Log2Profile=FALSE,
-                                   Window=3000 )
+                                   Window=3000,
+                                   y_lim=NULL )
 
 ChIP_BrDU_Genomic_Element_Enrichment_Plotter( SampleDir=BRDU_SAMPLE_DIR,
                                               Assay="BrDU",
@@ -201,14 +205,16 @@ ChIP_BrDU_Genomic_Element_Enrichment_Plotter( SampleDir=BRDU_SAMPLE_DIR,
                                               StrandMode="collapsed",
                                               Elements=NULL,
                                               Log2Profile=FALSE,
-                                              Window=3000 )
+                                              Window=3000,
+                                              y_lim=NULL )
 
 ChIP_BrDU_Early_Late_Enrichment_Plotter( SampleDir=BRDU_SAMPLE_DIR,
                                          Assay="BrDU",
                                          Alignment=BRDU_ALIGNMENT,
                                          StrandMode="collapsed",
                                          Log2Profile=FALSE,
-                                         Window=3000 )
+                                         Window=3000,
+                                         y_lim=NULL )
 
 ChIP_BrDU_Genomic_Element_Boxplotter( SampleDir=BRDU_SAMPLE_DIR,
                                       Assay="BrDU",

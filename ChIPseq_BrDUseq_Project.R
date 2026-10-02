@@ -4024,6 +4024,8 @@ ChIP_BrDU_rDNA_Plotter <- function(
 ## because it has no neutral enrichment baseline.
 ## Saved peak cohorts are used exactly as written: Genomewide, Origin, NonOrigin,
 ## EarlyOrigin, and LateOrigin are not rebuilt from genomic annotations here.
+## y_lim=NULL retains automatic panel scaling. A two-number vector applies one
+## range to every metric; a named list can override selected metric ranges.
 ##
 ## The four-page report follows the legacy peak-analysis organization:
 ##   1. peak-cohort counts;
@@ -4038,7 +4040,8 @@ ChIP_BrDU_rDNA_Plotter <- function(
 ##   Alignment="generic",
 ##   StrandMode="collapsed",
 ##   Log2Profile=FALSE,
-##   Window=3000
+##   Window=3000,
+##   y_lim=NULL
 ## )
 ChIP_BrDU_Peak_Enrichment_Plotter <- function(
     SampleDir,
@@ -4047,7 +4050,8 @@ ChIP_BrDU_Peak_Enrichment_Plotter <- function(
     StrandMode=c("collapsed", "separated"),
     Log2Profile=FALSE,
     Window=3000,
-    OutputDir=NULL){
+    OutputDir=NULL,
+    y_lim=NULL){
 
   ## Fixed report contract. These display settings are implementation details,
   ## not user-facing arguments.
@@ -4104,6 +4108,50 @@ ChIP_BrDU_Peak_Enrichment_Plotter <- function(
     stop("Window must be one positive whole number of base pairs.", call.=FALSE)
   }
   Window <- as.integer(round(Window))
+
+  ResolveManualYLimits <- function(value){
+    Result <- stats::setNames(vector("list", length(Metrics)), Metrics)
+    if(is.null(value)) return(Result)
+    ValidateRange <- function(range, label){
+      if(!is.numeric(range) || length(range) != 2L ||
+         anyNA(range) || any(!is.finite(range)) || range[[1]] >= range[[2]]){
+        stop(
+          label,
+          " must contain two finite numbers in increasing lower/upper order.",
+          call.=FALSE
+        )
+      }
+      as.numeric(range)
+    }
+    if(is.list(value)){
+      ValueNames <- names(value)
+      if(is.null(ValueNames) || anyNA(ValueNames) || any(!nzchar(ValueNames)) ||
+         anyDuplicated(ValueNames)){
+        stop(
+          "A list supplied as y_lim must have unique non-empty metric names.",
+          call.=FALSE
+        )
+      }
+      InvalidNames <- setdiff(ValueNames, Metrics)
+      if(length(InvalidNames) > 0L){
+        stop(
+          "Unsupported y_lim metric name(s): ",
+          paste(InvalidNames, collapse=", "),
+          call.=FALSE
+        )
+      }
+      for(metric in ValueNames){
+        Result[[metric]] <- ValidateRange(
+          value[[metric]], paste0("y_lim$", metric)
+        )
+      }
+    } else {
+      SharedRange <- ValidateRange(value, "y_lim")
+      for(metric in Metrics) Result[[metric]] <- SharedRange
+    }
+    Result
+  }
+  ManualYLimits <- ResolveManualYLimits(y_lim)
 
   if(is.null(OutputDir)){
     OutputDir <- SampleDir
@@ -4682,6 +4730,9 @@ ChIP_BrDU_Peak_Enrichment_Plotter <- function(
         YPad <- max(0.1, abs(YRange[[1]])*0.08)
       }
       YLim <- YRange+c(-YPad, YPad)
+      if(!is.null(ManualYLimits[[metric]])){
+        YLim <- ManualYLimits[[metric]]
+      }
       graphics::plot(
         X,
         Y,
@@ -4743,6 +4794,9 @@ ChIP_BrDU_Peak_Enrichment_Plotter <- function(
       YMax <- 1
     }
     YLim <- c(-1, 1)*YMax*1.08
+    if(!is.null(ManualYLimits[[metric]])){
+      YLim <- ManualYLimits[[metric]]
+    }
     graphics::plot(
       X,
       WatsonY,
@@ -4827,6 +4881,9 @@ ChIP_BrDU_Peak_Enrichment_Plotter <- function(
         YPad <- max(0.1, abs(YRange[[1]])*0.08)
       }
       YLim <- YRange+c(-YPad, YPad)
+      if(!is.null(ManualYLimits[["ratio.ipin.noise"]])){
+        YLim <- ManualYLimits[["ratio.ipin.noise"]]
+      }
       graphics::plot(
         X,
         Y1,
@@ -4897,6 +4954,9 @@ ChIP_BrDU_Peak_Enrichment_Plotter <- function(
       YMax <- 1
     }
     YLim <- c(-1, 1)*YMax*1.08
+    if(!is.null(ManualYLimits[["ratio.ipin.noise"]])){
+      YLim <- ManualYLimits[["ratio.ipin.noise"]]
+    }
     graphics::plot(
       X,
       Y1Watson,
@@ -5164,6 +5224,9 @@ ChIP_BrDU_Peak_Enrichment_Plotter <- function(
     ),
     profiles=Profiles,
     metrics=Metrics,
+    y_lim=y_lim,
+    manual_y_limits=ManualYLimits,
+    y_limit_semantics="NULL uses automatic panel scaling; a shared range or named metric ranges apply to all corresponding individual and pairwise panels",
     profile_statistic="median",
     edge_handling="missing chromosome-edge bins excluded; no zero padding",
     page_count=4L,
@@ -5183,6 +5246,7 @@ ChIP_BrDU_Peak_Enrichment_Plotter <- function(
     display_operations=c(
       peak_centered_median=TRUE,
       spline_smoothing=TRUE,
+      manual_y_limits=any(lengths(ManualYLimits) > 0L),
       shared_pairwise_scale=TRUE,
       ratio_neutral_reference_line=TRUE,
       profile_rebasing=FALSE,
@@ -5213,6 +5277,8 @@ ChIP_BrDU_Peak_Enrichment_Plotter <- function(
 ## retain reference-coordinate order and minus-strand features are not
 ## reversed. Untransformed ratio panels mark 1 as the neutral reference (0
 ## after log2), without rebasing the saved ratios; raw coverage is data-scaled.
+## y_lim=NULL retains automatic panel scaling. A two-number vector applies one
+## range to every metric; a named list can override selected metric ranges.
 ##
 ## Elements=NULL retains the complete curated-element report. Elements may also
 ## select any combination of curated classes and the sample-specific selectors
@@ -5230,7 +5296,8 @@ ChIP_BrDU_Peak_Enrichment_Plotter <- function(
 ##   StrandMode="collapsed",
 ##   Elements=c("EarlyOrigin", "LateOrigin", "OriginPeaks"),
 ##   Log2Profile=FALSE,
-##   Window=3000
+##   Window=3000,
+##   y_lim=NULL
 ## )
 ChIP_BrDU_Genomic_Element_Enrichment_Plotter <- function(
     SampleDir,
@@ -5240,7 +5307,8 @@ ChIP_BrDU_Genomic_Element_Enrichment_Plotter <- function(
     Log2Profile=FALSE,
     Window=3000,
     OutputDir=NULL,
-    Elements=NULL){
+    Elements=NULL,
+    y_lim=NULL){
 
   ## Fixed display contract. Cohort selection is public; display styling stays
   ## internal so the reports retain one consistent publication layout.
@@ -5350,6 +5418,50 @@ ChIP_BrDU_Genomic_Element_Enrichment_Plotter <- function(
     stop("Window must be one positive whole number of base pairs.", call.=FALSE)
   }
   Window <- as.integer(round(Window))
+
+  ResolveManualYLimits <- function(value){
+    Result <- stats::setNames(vector("list", length(Metrics)), Metrics)
+    if(is.null(value)) return(Result)
+    ValidateRange <- function(range, label){
+      if(!is.numeric(range) || length(range) != 2L ||
+         anyNA(range) || any(!is.finite(range)) || range[[1]] >= range[[2]]){
+        stop(
+          label,
+          " must contain two finite numbers in increasing lower/upper order.",
+          call.=FALSE
+        )
+      }
+      as.numeric(range)
+    }
+    if(is.list(value)){
+      ValueNames <- names(value)
+      if(is.null(ValueNames) || anyNA(ValueNames) || any(!nzchar(ValueNames)) ||
+         anyDuplicated(ValueNames)){
+        stop(
+          "A list supplied as y_lim must have unique non-empty metric names.",
+          call.=FALSE
+        )
+      }
+      InvalidNames <- setdiff(ValueNames, Metrics)
+      if(length(InvalidNames) > 0L){
+        stop(
+          "Unsupported y_lim metric name(s): ",
+          paste(InvalidNames, collapse=", "),
+          call.=FALSE
+        )
+      }
+      for(metric in ValueNames){
+        Result[[metric]] <- ValidateRange(
+          value[[metric]], paste0("y_lim$", metric)
+        )
+      }
+    } else {
+      SharedRange <- ValidateRange(value, "y_lim")
+      for(metric in Metrics) Result[[metric]] <- SharedRange
+    }
+    Result
+  }
+  ManualYLimits <- ResolveManualYLimits(y_lim)
 
   if(is.null(OutputDir)){
     OutputDir <- SampleDir
@@ -5998,6 +6110,9 @@ ChIP_BrDU_Genomic_Element_Enrichment_Plotter <- function(
         YPad <- max(0.1, abs(YRange[[1]])*0.08)
       }
       YLim <- YRange+c(-YPad, YPad)
+      if(!is.null(ManualYLimits[[metric]])){
+        YLim <- ManualYLimits[[metric]]
+      }
       graphics::plot(
         X,
         Y,
@@ -6059,6 +6174,9 @@ ChIP_BrDU_Genomic_Element_Enrichment_Plotter <- function(
       YMax <- 1
     }
     YLim <- c(-1, 1)*YMax*1.08
+    if(!is.null(ManualYLimits[[metric]])){
+      YLim <- ManualYLimits[[metric]]
+    }
     graphics::plot(
       X,
       WatsonY,
@@ -6124,6 +6242,9 @@ ChIP_BrDU_Genomic_Element_Enrichment_Plotter <- function(
         YPad <- max(0.1, abs(YRange[[1]])*0.08)
       }
       YLim <- YRange+c(-YPad, YPad)
+      if(!is.null(ManualYLimits[[metric]])){
+        YLim <- ManualYLimits[[metric]]
+      }
       graphics::plot(
         X,
         Y1,
@@ -6198,6 +6319,9 @@ ChIP_BrDU_Genomic_Element_Enrichment_Plotter <- function(
       YMax <- 1
     }
     YLim <- c(-1, 1)*YMax*1.08
+    if(!is.null(ManualYLimits[[metric]])){
+      YLim <- ManualYLimits[[metric]]
+    }
     graphics::plot(
       X,
       Y1Watson,
@@ -6449,6 +6573,9 @@ ChIP_BrDU_Genomic_Element_Enrichment_Plotter <- function(
     element_centering="curated BED interval midpoint or saved primary-analysis peakSummit; reference-coordinate order retained",
     profiles=Profiles,
     metrics=Metrics,
+    y_lim=y_lim,
+    manual_y_limits=ManualYLimits,
+    y_limit_semantics="NULL uses automatic panel scaling; a shared range or named metric ranges apply to all corresponding individual and pairwise panels",
     profile_statistic="median",
     edge_handling="missing chromosome-edge bins excluded; no zero padding",
     page_count=PageCount,
@@ -6478,6 +6605,7 @@ ChIP_BrDU_Genomic_Element_Enrichment_Plotter <- function(
       reference_coordinate_orientation=TRUE,
       feature_strand_reversal=FALSE,
       spline_smoothing=TRUE,
+      manual_y_limits=any(lengths(ManualYLimits) > 0L),
       shared_pairwise_scale=TRUE,
       ratio_neutral_reference_line=TRUE,
       profile_rebasing=FALSE,
@@ -11807,6 +11935,9 @@ ChIP_BrDU_Primary_Analysis <- function(  Input_R1 = "/full/path/to/file_R1.fastq
 ## Strand-separated profiles keep Watson positive and mirror Crick below zero.
 ## Untransformed ratio panels mark 1 as the neutral reference (0 after log2),
 ## without rebasing the saved ratio values. Raw coverage remains data-scaled.
+## y_lim=NULL retains automatic panel scaling. A two-number vector applies one
+## range to every metric; a named list can override selected metric ranges on
+## the average-profile and boxplot pages.
 ##
 ## The original three profile pages are retained and a fourth comparative
 ## distribution page is added:
@@ -11828,7 +11959,8 @@ ChIP_BrDU_Primary_Analysis <- function(  Input_R1 = "/full/path/to/file_R1.fastq
 ##   Alignment="generic",
 ##   StrandMode="collapsed",
 ##   Log2Profile=FALSE,
-##   Window=3000
+##   Window=3000,
+##   y_lim=NULL
 ## )
 ChIP_BrDU_Early_Late_Enrichment_Plotter <- function(
     SampleDir,
@@ -11837,7 +11969,8 @@ ChIP_BrDU_Early_Late_Enrichment_Plotter <- function(
     StrandMode=c("collapsed", "separated"),
     Log2Profile=FALSE,
     Window=3000,
-    OutputDir=NULL){
+    OutputDir=NULL,
+    y_lim=NULL){
 
   Metrics <- c("ip.score", "ratio.ipin", "ratio.ipnoise", "ratio.ipin.noise")
   MetricYLabels <- c(
@@ -11889,6 +12022,50 @@ ChIP_BrDU_Early_Late_Enrichment_Plotter <- function(
     stop("Window must be one positive whole number of base pairs.", call.=FALSE)
   }
   Window <- as.integer(round(Window))
+
+  ResolveManualYLimits <- function(value){
+    Result <- stats::setNames(vector("list", length(Metrics)), Metrics)
+    if(is.null(value)) return(Result)
+    ValidateRange <- function(range, label){
+      if(!is.numeric(range) || length(range) != 2L ||
+         anyNA(range) || any(!is.finite(range)) || range[[1]] >= range[[2]]){
+        stop(
+          label,
+          " must contain two finite numbers in increasing lower/upper order.",
+          call.=FALSE
+        )
+      }
+      as.numeric(range)
+    }
+    if(is.list(value)){
+      ValueNames <- names(value)
+      if(is.null(ValueNames) || anyNA(ValueNames) || any(!nzchar(ValueNames)) ||
+         anyDuplicated(ValueNames)){
+        stop(
+          "A list supplied as y_lim must have unique non-empty metric names.",
+          call.=FALSE
+        )
+      }
+      InvalidNames <- setdiff(ValueNames, Metrics)
+      if(length(InvalidNames) > 0L){
+        stop(
+          "Unsupported y_lim metric name(s): ",
+          paste(InvalidNames, collapse=", "),
+          call.=FALSE
+        )
+      }
+      for(metric in ValueNames){
+        Result[[metric]] <- ValidateRange(
+          value[[metric]], paste0("y_lim$", metric)
+        )
+      }
+    } else {
+      SharedRange <- ValidateRange(value, "y_lim")
+      for(metric in Metrics) Result[[metric]] <- SharedRange
+    }
+    Result
+  }
+  ManualYLimits <- ResolveManualYLimits(y_lim)
 
   if(is.null(OutputDir)){
     OutputDir <- SampleDir
@@ -12550,6 +12727,11 @@ ChIP_BrDU_Early_Late_Enrichment_Plotter <- function(
     ),
     Metrics
   )
+  for(metric in Metrics){
+    if(!is.null(ManualYLimits[[metric]])){
+      OriginBoxYLimits[[metric]] <- ManualYLimits[[metric]]
+    }
+  }
 
   FormatPValue <- function(value, label="p"){
     if(length(value) != 1L || !is.finite(value)){
@@ -12649,10 +12831,14 @@ ChIP_BrDU_Early_Late_Enrichment_Plotter <- function(
       if(!is.finite(YPad) || YPad == 0){
         YPad <- max(0.1, abs(YRange[[1]])*0.08)
       }
+      YLim <- YRange+c(-YPad, YPad)
+      if(!is.null(ManualYLimits[[metric]])){
+        YLim <- ManualYLimits[[metric]]
+      }
       graphics::plot(
         X,
         Y,
-        ylim=YRange+c(-YPad, YPad),
+        ylim=YLim,
         xlim=c(-Window, Window)/1000,
         main=PlotHeader,
         ylab=DisplayMetricLabel(metric),
@@ -12699,10 +12885,14 @@ ChIP_BrDU_Early_Late_Enrichment_Plotter <- function(
     if(!is.finite(YMax) || YMax == 0){
       YMax <- 0.5
     }
+    YLim <- c(-YMax, YMax)
+    if(!is.null(ManualYLimits[[metric]])){
+      YLim <- ManualYLimits[[metric]]
+    }
     graphics::plot(
       X,
       Watson,
-      ylim=c(-YMax, YMax),
+      ylim=YLim,
       xlim=c(-Window, Window)/1000,
       main=PlotHeader,
       ylab=DisplayMetricLabel(metric),
@@ -12761,10 +12951,14 @@ ChIP_BrDU_Early_Late_Enrichment_Plotter <- function(
       if(!is.finite(YPad) || YPad == 0){
         YPad <- max(0.1, abs(YRange[[1]])*0.08)
       }
+      YLim <- YRange+c(-YPad, YPad)
+      if(!is.null(ManualYLimits[[metric]])){
+        YLim <- ManualYLimits[[metric]]
+      }
       graphics::plot(
         X,
         Early,
-        ylim=YRange+c(-YPad, YPad),
+        ylim=YLim,
         xlim=c(-Window, Window)/1000,
         main=PlotHeader,
         ylab=DisplayMetricLabel(metric),
@@ -12822,10 +13016,14 @@ ChIP_BrDU_Early_Late_Enrichment_Plotter <- function(
     if(!is.finite(YMax) || YMax == 0){
       YMax <- 0.5
     }
+    YLim <- c(-YMax, YMax)
+    if(!is.null(ManualYLimits[[metric]])){
+      YLim <- ManualYLimits[[metric]]
+    }
     graphics::plot(
       X,
       EW,
-      ylim=c(-YMax, YMax),
+      ylim=YLim,
       xlim=c(-Window, Window)/1000,
       main=PlotHeader,
       ylab=DisplayMetricLabel(metric),
@@ -13223,6 +13421,9 @@ ChIP_BrDU_Early_Late_Enrichment_Plotter <- function(
     chrM_excluded=TRUE,
     origin_centering="BED interval midpoint",
     profiles=Profiles,
+    y_lim=y_lim,
+    manual_y_limits=ManualYLimits,
+    y_limit_semantics="NULL uses automatic panel scaling; a shared range or named metric ranges apply to profile, pairwise, and boxplot panels",
     boxplot_ratio_file=CollapsedRatioFile,
     boxplot_ratio_chrM_rows_omitted=BoxplotRatioResult$chrM_omitted,
     boxplot_scores=OriginBoxScores,
@@ -13265,7 +13466,8 @@ ChIP_BrDU_Early_Late_Enrichment_Plotter <- function(
       boxplot_outlier_points_hidden=TRUE,
       boxplot_wilcoxon_rank_sum=TRUE,
       boxplot_bh_adjustment_across_metrics=TRUE,
-      boxplot_shared_coordinates_excluded_from_tests=TRUE
+      boxplot_shared_coordinates_excluded_from_tests=TRUE,
+      manual_y_limits=any(lengths(ManualYLimits) > 0L)
     )
   ))
 }

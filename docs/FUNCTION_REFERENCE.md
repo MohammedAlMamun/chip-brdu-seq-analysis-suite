@@ -17,9 +17,9 @@ For argument-by-argument guidance and complete call examples, see the [complete 
 | `ChIP_BrDU_WholeGenome_Plotter()` | 1 | collapsed, separated | Whole-chromosome profiles with genomic annotations; collapsed mode can display saved peaks. |
 | `ChIP_BrDU_Region_Plotter()` | 1 or more | collapsed, separated | Profiles over user-supplied chromosome coordinates. |
 | `ChIP_BrDU_rDNA_Plotter()` | 1 or more | collapsed, separated | Profiles and exact feature annotations over the custom two-repeat rDNA reference. |
-| `ChIP_BrDU_Peak_Enrichment_Plotter()` | 1 | collapsed, separated | Average profiles for five saved peak classes. |
-| `ChIP_BrDU_Genomic_Element_Enrichment_Plotter()` | 1 | collapsed, separated | Average profiles for curated features or saved peak classes. |
-| `ChIP_BrDU_Early_Late_Enrichment_Plotter()` | 1 | collapsed, separated | Focused Early/Late report with individual profiles, paired profiles and comparative boxplots with Wilcoxon p-values. |
+| `ChIP_BrDU_Peak_Enrichment_Plotter()` | 1 | collapsed, separated | Average profiles for five saved peak classes, with optional shared or metric-specific manual y limits. |
+| `ChIP_BrDU_Genomic_Element_Enrichment_Plotter()` | 1 | collapsed, separated | Average profiles for curated features or saved peak classes, with optional shared or metric-specific manual y limits. |
+| `ChIP_BrDU_Early_Late_Enrichment_Plotter()` | 1 | collapsed, separated | Focused Early/Late report with individual profiles, paired profiles, comparative boxplots, Wilcoxon p-values and optional manual y limits. |
 | `ChIP_BrDU_Genomic_Element_Boxplotter()` | 1 | collapsed | Element-centred distributions plus a final single-metric statistical comparison of all selected cohorts. |
 | `ChIP_BrDU_Genomic_Element_Heatmap_Plotter()` | 1 | collapsed | Publication-oriented option-C viridis heatmaps with optional centered `x_lim` cropping and manual `z_lim` saturation. |
 | `ChIP_BrDU_TimeSeries_Analysis()` | 2–10 | collapsed | Re-estimates time-point backgrounds on one fixed coordinate grid and produces coordinated ratios, stacked genome-wide profiles, average profiles and heatmaps. |

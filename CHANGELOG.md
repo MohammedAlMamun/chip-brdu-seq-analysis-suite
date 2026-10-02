@@ -14,6 +14,7 @@ All notable changes to this project will be documented here.
 
 ### Changed
 
+- Added `y_lim` to the peak, genomic-element and Early/Late enrichment plotters. It supports either one shared lower/upper range or named per-metric ranges; `NULL` retains automatic scaling.
 - The run script and documentation now include explicit ChIP and BrDU time-series calls and interpretation guidance.
 - Genomic-element heatmaps now reproduce the legacy enrichment palette with 100 viridis option-C colors and accept display-only `x_lim` and `z_lim` controls.
 - `ChIP_BrDU_Complete_Analysis()` now forwards optional `HeatmapXLim` and `HeatmapZLim` values to its genomic-element heatmap stage.

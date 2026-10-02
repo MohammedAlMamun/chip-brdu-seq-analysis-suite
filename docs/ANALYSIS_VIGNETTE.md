@@ -480,7 +480,8 @@ ChIP_BrDU_Peak_Enrichment_Plotter(
   StrandMode=c("collapsed", "separated"),
   Log2Profile=FALSE,
   Window=3000,
-  OutputDir=NULL
+  OutputDir=NULL,
+  y_lim=NULL
 )
 ```
 
@@ -495,6 +496,7 @@ ChIP_BrDU_Peak_Enrichment_Plotter(
 | `Log2Profile` | `FALSE` | `FALSE` preserves the saved scale. `TRUE` uses `log2(x)` for collapsed profiles and `log2(1+x)` before strand mirroring for separated profiles. |
 | `Window` | `3000` | Positive half-window in base pairs around every saved peak summit. |
 | `OutputDir` | `NULL` | PDF destination; `NULL` writes to `SampleDir`. |
+| `y_lim` | `NULL` | `NULL` keeps automatic scaling. Use `c(lower, upper)` for one range across all metrics, or a named list such as `list(ip.score=c(0, 300), ratio.ipin.noise=c(0.8, 3))` for selected metrics. The range is shared by the corresponding individual and pairwise panels. |
 
 ### Report organization
 
@@ -513,7 +515,8 @@ ChIP_BrDU_Peak_Enrichment_Plotter(
   Alignment="generic",
   StrandMode="separated",
   Log2Profile=FALSE,
-  Window=3000
+  Window=3000,
+  y_lim=NULL
 )
 ```
 
@@ -532,7 +535,8 @@ ChIP_BrDU_Genomic_Element_Enrichment_Plotter(
   Log2Profile=FALSE,
   Window=3000,
   OutputDir=NULL,
-  Elements=NULL
+  Elements=NULL,
+  y_lim=NULL
 )
 ```
 
@@ -548,6 +552,7 @@ ChIP_BrDU_Genomic_Element_Enrichment_Plotter(
 | `Window` | `3000` | Positive half-window in base pairs around each curated midpoint or saved peak summit. |
 | `OutputDir` | `NULL` | PDF destination; `NULL` writes to `SampleDir`. |
 | `Elements` | `NULL` | `NULL` requests the complete curated-element report. Otherwise supply one or more supported curated or peak selectors without duplicates. |
+| `y_lim` | `NULL` | `NULL` keeps automatic scaling. Use `c(lower, upper)` for one range across all metrics, or a named list such as `list(ip.score=c(0, 300), ratio.ipin.noise=c(0.8, 3))` for selected metrics. The range is shared by the corresponding individual and paired panels. |
 
 ### Report organization
 
@@ -567,7 +572,8 @@ ChIP_BrDU_Genomic_Element_Enrichment_Plotter(
   StrandMode="collapsed",
   Elements=c("EarlyOrigin", "LateOrigin", "OriginPeaks"),
   Log2Profile=FALSE,
-  Window=3000
+  Window=3000,
+  y_lim=NULL
 )
 ```
 
@@ -585,7 +591,8 @@ ChIP_BrDU_Early_Late_Enrichment_Plotter(
   StrandMode=c("collapsed", "separated"),
   Log2Profile=FALSE,
   Window=3000,
-  OutputDir=NULL
+  OutputDir=NULL,
+  y_lim=NULL
 )
 ```
 
@@ -600,6 +607,7 @@ ChIP_BrDU_Early_Late_Enrichment_Plotter(
 | `Log2Profile` | `FALSE` | Enables display transformation where supported. For separated average profiles it uses `log2(1+x)` before Crick mirroring; page-4 boxes use the corresponding collapsed display scale. |
 | `Window` | `3000` | Positive half-window in base pairs around each Early or Late origin midpoint for both profiles and per-origin boxplot summaries. |
 | `OutputDir` | `NULL` | PDF destination; `NULL` writes to `SampleDir`. |
+| `y_lim` | `NULL` | `NULL` keeps automatic scaling. Use `c(lower, upper)` for one range across all four metrics, or a named list such as `list(ip.score=c(0, 300), ratio.ipin.noise=c(0.8, 3))` for selected metrics. The range also applies to the corresponding paired profile and page-4 boxplot panel. |
 
 ### Statistical page
 
@@ -618,7 +626,8 @@ ChIP_BrDU_Early_Late_Enrichment_Plotter(
   Alignment="generic",
   StrandMode="collapsed",
   Log2Profile=FALSE,
-  Window=3000
+  Window=3000,
+  y_lim=NULL
 )
 ```
 
