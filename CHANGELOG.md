@@ -22,6 +22,7 @@ All notable changes to this project will be documented here.
 - Time-series heatmaps now default to a shared final-time-point signal order, support alternate time-point, peak-time or genomic ordering, and correctly saturate values outside the colour limits instead of drawing them white.
 - The terminal 15-kb mask now affects only time-series background training; telomere-proximal nuclear centres remain available to centred summaries and plots.
 - Time-series background QC now displays both assay and Input coverage over the fixed eligible background coordinates.
+- Time-series stacked genome-wide profiles now accept `PlotStyle="lines"` or `PlotStyle="hist"`; line plots remain the default, and average profiles remain line-based.
 
 ## [1.0.0-rc1] - 2026-08-24
 

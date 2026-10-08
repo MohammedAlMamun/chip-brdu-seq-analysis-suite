@@ -900,6 +900,7 @@ ChIP_BrDU_TimeSeries_Analysis(
   Window=3000,
   WindowSizeKb=50,
   Log2Values=FALSE,
+  PlotStyle=c("lines", "hist"),
   HeatmapOrderBy="last",
   y_val=NULL,
   OutputDir=NULL
@@ -922,6 +923,7 @@ ChIP_BrDU_TimeSeries_Analysis(
 | `Window` | `3000` | Half-window in base pairs around every origin midpoint or common peak summit. It must be divisible by the saved sliding-window step. |
 | `WindowSizeKb` | `50` | Genomic span in kilobases represented by one stacked genome-wide PDF page. |
 | `Log2Values` | `FALSE` | Applies `log2(1+x)` to coverage or `log2(x)` to positive ratio values for display and centre summaries. Coordinated BED values remain untransformed. |
+| `PlotStyle` | `"lines"` | Rendering for the stacked genome-wide PDF only. Use `"lines"` for smoothed curves or `"hist"` for vertical histogram bars. Average profiles always remain smoothed line plots. |
 | `HeatmapOrderBy` | `"last"` | Shared heatmap row order. `"last"` sorts by decreasing window-mean signal at the final supplied time point. Use an exact `TimePoints` label to sort by that time point, `"peak_time"` for activation-time grouping, or `"genomic"` for chromosome-coordinate order. |
 | `y_val` | `NULL` | Optional common upper plotting limit for genome-wide and average-profile panels. `NULL` uses robust automatic scaling. |
 | `OutputDir` | `NULL` | Complete time-series output directory. By default, a `SeriesName_TimeSeries` folder is created beside the first sample directory. |
@@ -948,7 +950,7 @@ The QC PDF reports the number of fixed eligible 2-kb chunks per chromosome and t
 
 The terminal 15-kb mask is used only for background training. Telomere-proximal nuclear origins and peaks remain in centred tables, average profiles and heatmaps. When a requested flank extends beyond a chromosome end, only the unavailable flank is recorded as missing. `chrM` and rDNA centres remain excluded.
 
-Average-profile lines use one chronological viridis gradient and display-only spline smoothing. Heatmaps keep the same coordinates, row order and colour limits in every time-point panel. By default, rows are sorted by decreasing final-time-point window-mean signal; `HeatmapOrderBy` can select another time point, activation-time grouping or genomic order. Values beyond the shared colour quantiles are saturated at the palette limits rather than rendered as missing. Series containing seven to ten samples wrap the heatmap panels into two rows of at most five time points. The genome-wide PDF uses one coordinate window per page, vertically stacks every time point with one shared y-axis, and places one common genomic-feature track below the stack.
+Average profiles always use smoothed lines with one chronological viridis gradient. For the stacked genome-wide PDF, `PlotStyle="lines"` draws smoothed curves and `PlotStyle="hist"` draws vertical histogram bars. Heatmaps keep the same coordinates, row order and colour limits in every time-point panel. By default, rows are sorted by decreasing final-time-point window-mean signal; `HeatmapOrderBy` can select another time point, activation-time grouping or genomic order. Values beyond the shared colour quantiles are saturated at the palette limits rather than rendered as missing. Series containing seven to ten samples wrap the heatmap panels into two rows of at most five time points. The genome-wide PDF uses one coordinate window per page, vertically stacks every time point with one shared y-axis, and places one common genomic-feature track below the stack.
 
 Every run also compares the selected untransformed metric from the original primary ratio tables with its coordinated counterpart at all confirmed origins. It writes per-origin primary and coordinated centre/window summaries, Pearson and Spearman statistics, and a multi-page scatterplot PDF. This makes the effect of coordinated background estimation directly auditable at each time point.
 
@@ -1004,6 +1006,7 @@ ChIP_BrDU_TimeSeries_Analysis(
   Window=3000,
   WindowSizeKb=50,
   Log2Values=FALSE,
+  PlotStyle="lines",
   HeatmapOrderBy="last",
   y_val=NULL,
   OutputDir="/data/MCM/MCM_Licensing_TimeSeries"

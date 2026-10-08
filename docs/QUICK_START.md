@@ -105,10 +105,11 @@ ChIP_BrDU_TimeSeries_Analysis(
   Window=3000,
   WindowSizeKb=50,
   Log2Values=FALSE,
+  PlotStyle="lines",
   HeatmapOrderBy="last",
   y_val=NULL,
   OutputDir="/data/MCM/MCM_TimeCourse"
 )
 ```
 
-`PeakSet="union"` uses the merged peaks from all time points. To use the peaks from one supplied time point, choose `PeakSet="reference"` and set `ReferenceTimePoint` to its exact label. `HeatmapOrderBy="last"` gives every heatmap panel one row order based on final-time-point signal; an exact time-point label, `"peak_time"`, or `"genomic"` can be used instead. Telomere-proximal centres remain in reports although terminal 15-kb regions remain excluded from background estimation. The function is strand-collapsed and intended for relative enrichment; the current version has no replicate model or external BED input.
+`PeakSet="union"` uses the merged peaks from all time points. To use the peaks from one supplied time point, choose `PeakSet="reference"` and set `ReferenceTimePoint` to its exact label. Average profiles are always smoothed lines. `PlotStyle="lines"` draws the stacked genome-wide profiles as curves; use `"hist"` for vertical histogram bars. `HeatmapOrderBy="last"` gives every heatmap panel one row order based on final-time-point signal; an exact time-point label, `"peak_time"`, or `"genomic"` can be used instead. Telomere-proximal centres remain in reports although terminal 15-kb regions remain excluded from background estimation. The function is strand-collapsed and intended for relative enrichment; the current version has no replicate model or external BED input.

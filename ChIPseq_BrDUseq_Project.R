@@ -14888,6 +14888,9 @@ ChIP_BrDU_Enrichment_Comparison_Plotter <- function(
 ## signal at the final supplied time point. An exact TimePoints label selects a
 ## different ordering time point; "peak_time" groups rows by the time of their
 ## maximum signal, and "genomic" retains chromosome-coordinate order.
+## PlotStyle controls only the stacked genome-wide profiles: "lines" preserves
+## the current smoothed curves and "hist" draws the same display values as
+## vertical histogram bars. Average profiles always remain smoothed line plots.
 ##
 ## Example:
 ## ChIP_BrDU_TimeSeries_Analysis(
@@ -14898,6 +14901,7 @@ ChIP_BrDU_Enrichment_Comparison_Plotter <- function(
 ##   SeriesName="MCM_TimeCourse",
 ##   PeakSet="union",
 ##   CenterSets=c("EarlyOrigin", "LateOrigin", "AllOrigins"),
+##   PlotStyle="lines",
 ##   HeatmapOrderBy="last"
 ## )
 ChIP_BrDU_TimeSeries_Analysis <- function(
@@ -14913,6 +14917,7 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
     Window=3000,
     WindowSizeKb=50,
     Log2Values=FALSE,
+    PlotStyle=c("lines", "hist"),
     HeatmapOrderBy="last",
     y_val=NULL,
     OutputDir=NULL){
@@ -14934,6 +14939,7 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
   Alignment <- match.arg(Alignment)
   PeakSet <- match.arg(PeakSet)
   Metric <- match.arg(Metric)
+  PlotStyle <- match.arg(PlotStyle)
 
   ValidateText <- function(value, name){
     if(length(value) != 1L || is.na(value) || !nzchar(as.character(value))){
@@ -16574,7 +16580,15 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
         if(nrow(Signal) > 0L){
           X <- (Signal$chromStart+Signal$chromEnd)/2
           Y <- SafeSmooth(X, Signal$display_signal)
-          graphics::lines(X, Y, col=TimeColors[[index]], lwd=1.35)
+          if(PlotStyle == "lines"){
+            graphics::lines(X, Y, col=TimeColors[[index]], lwd=1.35)
+          } else {
+            graphics::segments(
+              X, 0, X, Y,
+              col=grDevices::adjustcolor(TimeColors[[index]], alpha.f=0.82),
+              lwd=0.35
+            )
+          }
         }
         graphics::axis(2, las=1, cex.axis=0.74)
         graphics::abline(h=Baseline, col="gray72", lty=2, lwd=0.75)
@@ -16683,7 +16697,7 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
       "reference_timepoint", "peak_buffer_bp", "background_chunk_bp",
       "telomere_mask_bp", "rdna_mask", "common_candidate_chunks",
       "common_eligible_chunks", "center_sets", "metric", "window_bp",
-      "genome_window_kb", "log2_values", "heatmap_order_by",
+      "genome_window_kb", "log2_values", "plot_style", "heatmap_order_by",
       "heatmap_order_description", "telomere_center_policy", "y_val",
       "origin_correlation_table", "origin_correlation_pdf",
       "ratios_directory", "peaks_directory", "plots_directory"
@@ -16697,7 +16711,7 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
       paste0(rDNAChromosome, ":", rDNAStart, "-", rDNAEnd),
       nrow(CandidateChunks), nrow(BackgroundChunks),
       paste(CenterSets, collapse=";"), Metric, Window, WindowSizeKb,
-      Log2Values, HeatmapOrderBy, HeatmapOrderDescription,
+      Log2Values, PlotStyle, HeatmapOrderBy, HeatmapOrderDescription,
       "retained in centred reports; excluded only from background training",
       if(is.null(y_val)) "automatic" else y_val,
       OriginRatioComparisonFile, OriginCorrelationPDF,
@@ -16749,6 +16763,7 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
     origin_correlation_statistics=OriginCorrelationStatistics,
     metric=Metric,
     log2_values=Log2Values,
+    plot_style=PlotStyle,
     heatmap_order_by=HeatmapOrderBy,
     heatmap_order_description=HeatmapOrderDescription,
     heatmap_row_orders=HeatmapRowOrders,
