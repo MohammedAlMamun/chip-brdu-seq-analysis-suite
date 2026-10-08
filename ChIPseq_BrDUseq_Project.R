@@ -11910,8 +11910,10 @@ ChIP_BrDU_Primary_Analysis <- function(  Input_R1 = "/full/path/to/file_R1.fastq
 
   ##
 
-  rm(list=ls())
-  gc()
+  ## Local objects are released when the function returns. Do not clear the
+  ## function environment here because the registered on.exit() cleanup still
+  ## needs the temporary origin-BED paths.
+  gc(verbose=FALSE)
 
   #
   message("✅ Alignment & Primary Analysis complete!")

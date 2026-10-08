@@ -23,6 +23,10 @@ All notable changes to this project will be documented here.
 - Time-series background QC now displays both assay and Input coverage over the fixed eligible background coordinates.
 - Time-series stacked genome-wide profiles now accept `PlotStyle="lines"` or `PlotStyle="hist"`; line plots remain the default, and average profiles remain line-based.
 
+### Fixed
+
+- Primary analysis now retains its temporary origin-BED path variables until the registered exit cleanup runs, preventing a false `All_Ori_Link not found` error after successful completion.
+
 ## [1.0.0-rc1] - 2026-08-24
 
 ### Added
