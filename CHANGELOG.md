@@ -11,6 +11,7 @@ All notable changes to this project will be documented here.
 - Automatic background exclusion of common peaks buffered by 600 bp, `chrM`, chrXII rDNA and the terminal 15 kb of every nuclear chromosome.
 - New coordinated ratio tables, background QC, chronological average profiles, shared-order heatmaps and stacked genome-wide time-series profiles.
 - Union or reference-time-point common peak construction and shared curated-origin or calculated-peak centre sets.
+- Primary-versus-coordinated all-origin ratio tables, correlation statistics and scatterplot reports for every time point.
 
 ### Changed
 
@@ -18,6 +19,9 @@ All notable changes to this project will be documented here.
 - The run script and documentation now include explicit ChIP and BrDU time-series calls and interpretation guidance.
 - Genomic-element heatmaps now reproduce the legacy enrichment palette with 100 viridis option-C colors and accept display-only `x_lim` and `z_lim` controls.
 - `ChIP_BrDU_Complete_Analysis()` now forwards optional `HeatmapXLim` and `HeatmapZLim` values to its genomic-element heatmap stage.
+- Time-series heatmaps now default to a shared final-time-point signal order, support alternate time-point, peak-time or genomic ordering, and correctly saturate values outside the colour limits instead of drawing them white.
+- The terminal 15-kb mask now affects only time-series background training; telomere-proximal nuclear centres remain available to centred summaries and plots.
+- Time-series background QC now displays both assay and Input coverage over the fixed eligible background coordinates.
 
 ## [1.0.0-rc1] - 2026-08-24
 

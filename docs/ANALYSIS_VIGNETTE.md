@@ -900,6 +900,7 @@ ChIP_BrDU_TimeSeries_Analysis(
   Window=3000,
   WindowSizeKb=50,
   Log2Values=FALSE,
+  HeatmapOrderBy="last",
   y_val=NULL,
   OutputDir=NULL
 )
@@ -921,6 +922,7 @@ ChIP_BrDU_TimeSeries_Analysis(
 | `Window` | `3000` | Half-window in base pairs around every origin midpoint or common peak summit. It must be divisible by the saved sliding-window step. |
 | `WindowSizeKb` | `50` | Genomic span in kilobases represented by one stacked genome-wide PDF page. |
 | `Log2Values` | `FALSE` | Applies `log2(1+x)` to coverage or `log2(x)` to positive ratio values for display and centre summaries. Coordinated BED values remain untransformed. |
+| `HeatmapOrderBy` | `"last"` | Shared heatmap row order. `"last"` sorts by decreasing window-mean signal at the final supplied time point. Use an exact `TimePoints` label to sort by that time point, `"peak_time"` for activation-time grouping, or `"genomic"` for chromosome-coordinate order. |
 | `y_val` | `NULL` | Optional common upper plotting limit for genome-wide and average-profile panels. `NULL` uses robust automatic scaling. |
 | `OutputDir` | `NULL` | Complete time-series output directory. By default, a `SeriesName_TimeSeries` folder is created beside the first sample directory. |
 
@@ -938,11 +940,17 @@ The public call intentionally has no external BED or low-mappability-mask argume
 
 Each sample keeps its own assay and Input background magnitude; only the genomic coordinates used to estimate those backgrounds are shared. The function preserves primary `ip.score`, `in.score`, `ratio.ipin` and, for generic alignment, `pvalue`. It recalculates `ip.noise`, `in.noise`, `ratio.ipnoise` and `ratio.ipin.noise` in new tables.
 
+The QC PDF reports the number of fixed eligible 2-kb chunks per chromosome and the median raw assay and Input coverage over those same coordinates at every time point. Input is the common eligibility gate, while both assay and Input backgrounds are estimated and therefore both are now shown.
+
 ### Centre sets and reports
 
-`AllOrigins` reads the bundled confirmed ARS list. Peak selectors build a common cohort using the chosen `PeakSet` rule. Centres falling in `chrM`, rDNA or terminal 15-kb regions are removed from centred reports.
+`AllOrigins` reads every confirmed ARS coordinate from the bundled oriDB-derived list and anchors profiles at the annotated origin midpoint, whether or not the sample has a called peak. `OriginPeaks` instead contains only calculated peaks classified as origin-associated at one or more selected time points and anchors profiles at their peak summits. The two reports are therefore expected to look similar but need not contain the same loci or alignment centres.
 
-Average-profile lines use one chronological viridis gradient and display-only spline smoothing. Heatmaps keep the same coordinates, row order and colour limits in every time-point panel; rows are ordered by the time of maximum window-mean signal. Series containing seven to ten samples wrap the heatmap panels into two rows of at most five time points. The genome-wide PDF uses one coordinate window per page, vertically stacks every time point with one shared y-axis, and places one common genomic-feature track below the stack.
+The terminal 15-kb mask is used only for background training. Telomere-proximal nuclear origins and peaks remain in centred tables, average profiles and heatmaps. When a requested flank extends beyond a chromosome end, only the unavailable flank is recorded as missing. `chrM` and rDNA centres remain excluded.
+
+Average-profile lines use one chronological viridis gradient and display-only spline smoothing. Heatmaps keep the same coordinates, row order and colour limits in every time-point panel. By default, rows are sorted by decreasing final-time-point window-mean signal; `HeatmapOrderBy` can select another time point, activation-time grouping or genomic order. Values beyond the shared colour quantiles are saturated at the palette limits rather than rendered as missing. Series containing seven to ten samples wrap the heatmap panels into two rows of at most five time points. The genome-wide PDF uses one coordinate window per page, vertically stacks every time point with one shared y-axis, and places one common genomic-feature track below the stack.
+
+Every run also compares the selected untransformed metric from the original primary ratio tables with its coordinated counterpart at all confirmed origins. It writes per-origin primary and coordinated centre/window summaries, Pearson and Spearman statistics, and a multi-page scatterplot PDF. This makes the effect of coordinated background estimation directly auditable at each time point.
 
 ### Output organization
 
@@ -957,12 +965,15 @@ SeriesName_TimeSeries/
 │   ├── one coordinated ratio BED per time point
 │   ├── background QC table
 │   ├── average-profile table
-│   └── centre-by-time summary matrix
+│   ├── centre-by-time summary matrix
+│   ├── primary-versus-coordinated all-origin table
+│   └── all-origin correlation statistics
 └── Plots/
     ├── stacked genome-wide PDF
     ├── average-profile PDF
     ├── heatmap PDF
-    └── background-QC PDF
+    ├── background-QC PDF
+    └── primary-versus-coordinated all-origin correlation PDF
 ```
 
 There are no heatmap-, profile-, or time-point-specific subfolders within these modality folders.
@@ -993,6 +1004,7 @@ ChIP_BrDU_TimeSeries_Analysis(
   Window=3000,
   WindowSizeKb=50,
   Log2Values=FALSE,
+  HeatmapOrderBy="last",
   y_val=NULL,
   OutputDir="/data/MCM/MCM_Licensing_TimeSeries"
 )

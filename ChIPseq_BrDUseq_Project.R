@@ -14879,8 +14879,15 @@ ChIP_BrDU_Enrichment_Comparison_Plotter <- function(
 ##
 ## CenterSets may contain EarlyOrigin, LateOrigin, AllOrigins, or any of the five
 ## primary-analysis peak selectors. Peak-centred cohorts use the same union or
-## reference-time-point rule as the background mask. No external BED input is
-## accepted in this first version.
+## reference-time-point rule as the background mask. The terminal mask applies
+## only to background training: telomere-proximal nuclear centres remain in the
+## centred tables and plots, with unavailable chromosome-edge flanks recorded
+## as missing values. No external BED input is accepted in this first version.
+##
+## HeatmapOrderBy="last" orders every time-point panel by decreasing window-mean
+## signal at the final supplied time point. An exact TimePoints label selects a
+## different ordering time point; "peak_time" groups rows by the time of their
+## maximum signal, and "genomic" retains chromosome-coordinate order.
 ##
 ## Example:
 ## ChIP_BrDU_TimeSeries_Analysis(
@@ -14890,7 +14897,8 @@ ChIP_BrDU_Enrichment_Comparison_Plotter <- function(
 ##   Alignment="generic",
 ##   SeriesName="MCM_TimeCourse",
 ##   PeakSet="union",
-##   CenterSets=c("EarlyOrigin", "LateOrigin", "AllOrigins")
+##   CenterSets=c("EarlyOrigin", "LateOrigin", "AllOrigins"),
+##   HeatmapOrderBy="last"
 ## )
 ChIP_BrDU_TimeSeries_Analysis <- function(
     SampleDirs,
@@ -14905,6 +14913,7 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
     Window=3000,
     WindowSizeKb=50,
     Log2Values=FALSE,
+    HeatmapOrderBy="last",
     y_val=NULL,
     OutputDir=NULL){
 
@@ -14989,6 +14998,37 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
   if(anyDuplicated(SampleNames)){
     stop("Completed sample directories must have unique folder names.", call.=FALSE)
   }
+
+  if(length(HeatmapOrderBy) != 1L || !is.character(HeatmapOrderBy) ||
+     is.na(HeatmapOrderBy) || !nzchar(HeatmapOrderBy)){
+    stop(
+      "HeatmapOrderBy must be 'last', 'peak_time', 'genomic', or one exact TimePoints label.",
+      call.=FALSE
+    )
+  }
+  if(HeatmapOrderBy == "last"){
+    HeatmapOrderMode <- "timepoint"
+    HeatmapOrderIndex <- NumberOfSamples
+  } else if(HeatmapOrderBy %in% TimePoints){
+    HeatmapOrderMode <- "timepoint"
+    HeatmapOrderIndex <- match(HeatmapOrderBy, TimePoints)
+  } else if(HeatmapOrderBy %in% c("peak_time", "genomic")){
+    HeatmapOrderMode <- HeatmapOrderBy
+    HeatmapOrderIndex <- NA_integer_
+  } else {
+    stop(
+      "HeatmapOrderBy must be 'last', 'peak_time', 'genomic', or one exact TimePoints label.",
+      call.=FALSE
+    )
+  }
+  HeatmapOrderDescription <- switch(
+    HeatmapOrderMode,
+    timepoint=paste0(
+      "decreasing window-mean signal at ", TimePoints[[HeatmapOrderIndex]]
+    ),
+    peak_time="time of maximum window-mean signal, then decreasing amplitude",
+    genomic="nuclear chromosome-coordinate order"
+  )
 
   SeriesName <- ValidateText(SeriesName, "SeriesName")
   SeriesTag <- SanitizeName(SeriesName)
@@ -15625,10 +15665,10 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
       file, header=TRUE, sep="\t", nrows=0L,
       showProgress=FALSE, data.table=TRUE
     ))
-    Required <- c(
+    Required <- unique(c(
       "chrom", "chromStart", "chromEnd", "name", "ip.score", "in.score",
-      "ratio.ipin"
-    )
+      "ratio.ipin", Metric
+    ))
     Missing <- setdiff(Required, Header)
     if(length(Missing) > 0L){
       stop(
@@ -15646,11 +15686,14 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
       chrom=as.character(chrom),
       chromStart=as.numeric(chromStart),
       chromEnd=as.numeric(chromEnd),
-      name=as.character(name),
-      ip.score=as.numeric(ip.score),
-      in.score=as.numeric(in.score),
-      ratio.ipin=as.numeric(ratio.ipin)
+      name=as.character(name)
     )]
+    NumericColumns <- intersect(
+      c("ip.score", "in.score", "ratio.ipin", "ratio.ipnoise",
+        "ratio.ipin.noise"),
+      names(Ratio)
+    )
+    Ratio[, (NumericColumns) := lapply(.SD, as.numeric), .SDcols=NumericColumns]
     if("pvalue" %in% names(Ratio)) Ratio[, pvalue := as.numeric(pvalue)]
     Ratio
   }
@@ -15676,6 +15719,7 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
   message("Estimating coordinated backgrounds and writing ratio tables...")
   CoordinatedRatioFiles <- character(NumberOfSamples)
   PlotTables <- vector("list", NumberOfSamples)
+  OriginalPlotTables <- vector("list", NumberOfSamples)
   for(index in seq_len(NumberOfSamples)){
     message("  Coordinated ratios: ", TimePoints[[index]])
     Coverage <- ReadCollapsedCoverage(SampleFiles[[index]], TimePoints[[index]])
@@ -15690,6 +15734,12 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
         call.=FALSE
       )
     }
+    OriginalPlotTable <- Primary[
+      chrom %in% NuclearChromosomes,
+      .(chrom, chromStart, chromEnd, signal=get(Metric))
+    ]
+    data.table::setorder(OriginalPlotTable, chrom, chromStart)
+    OriginalPlotTables[[index]] <- OriginalPlotTable
     IPNoise <- PredictBackground(Coverage, ChunkSummaries[[index]], "ip_median")
     InputNoiseRaw <- PredictBackground(
       Coverage, ChunkSummaries[[index]], "input_median"
@@ -15736,11 +15786,12 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
     PlotTables[[index]] <- PlotTable
     rm(
       Coverage, Primary, IPNoise, InputNoiseRaw, InputNoise,
-      RatioIPNoise, RatioClean, PlotTable
+      RatioIPNoise, RatioClean, PlotTable, OriginalPlotTable
     )
     gc(verbose=FALSE)
   }
   names(PlotTables) <- TimePoints
+  names(OriginalPlotTables) <- TimePoints
   names(CoordinatedRatioFiles) <- TimePoints
 
   PrettyCenterSet <- function(center_set){
@@ -15785,10 +15836,8 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
     )]
   }
   ProblematicCenter <- function(chrom, center){
-    ChromosomeLength <- ChromosomeInfo$length[match(chrom, ChromosomeInfo$chrom)]
-    !chrom %in% NuclearChromosomes |
-      center < TelomereMaskBp |
-      center > (ChromosomeLength-TelomereMaskBp) |
+    !is.finite(center) |
+      !chrom %in% NuclearChromosomes |
       (chrom == rDNAChromosome & center >= rDNAStart & center <= rDNAEnd)
   }
   CenterTables <- setNames(vector("list", length(CenterSets)), CenterSets)
@@ -15824,7 +15873,7 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
     if(nrow(Centers) == 0L){
       stop(
         "No usable centres remain for ", PrettyCenterSet(center_set),
-        " after excluding chrM, rDNA, and terminal 15-kb regions.",
+        " after excluding non-nuclear and rDNA coordinates.",
         call.=FALSE
       )
     }
@@ -15836,7 +15885,10 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
 
   Offsets <- seq.int(-Window, Window, by=Step)
   OffsetRows <- seq.int(-Window/Step, Window/Step)
-  BuildCenterMatrix <- function(PlotTable, Centers){
+  BuildCenterMatrix <- function(PlotTable, Centers, signal_column="display_signal"){
+    if(!signal_column %in% names(PlotTable)){
+      stop("Missing centre-matrix signal column: ", signal_column, call.=FALSE)
+    }
     Matrix <- matrix(
       NA_real_, nrow=nrow(Centers), ncol=length(Offsets),
       dimnames=list(Centers$center_id, as.character(Offsets))
@@ -15859,7 +15911,7 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
         Targets <- Anchors[[local_index]]+OffsetRows
         Valid <- Targets >= 1L & Targets <= nrow(ChromosomeSignal)
         Matrix[CenterIndexes[[local_index]], Valid] <-
-          ChromosomeSignal$display_signal[Targets[Valid]]
+          ChromosomeSignal[[signal_column]][Targets[Valid]]
       }
     }
     Matrix
@@ -15881,6 +15933,95 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
     values <- values[is.finite(values)]
     if(length(values) == 0L) NA_real_ else mean(values)
   }
+
+  ## Compare the original primary-analysis metric with the coordinated metric
+  ## at one common set of confirmed origins. This report is generated even when
+  ## AllOrigins was not requested in CenterSets.
+  if("AllOrigins" %in% names(CenterTables)){
+    CorrelationCenters <- data.table::copy(CenterTables$AllOrigins)
+  } else {
+    CorrelationCenters <- ReadCuratedCenters("AllOrigins")
+    CorrelationCenters <- CorrelationCenters[
+      !ProblematicCenter(chrom, center)
+    ]
+    if(nrow(CorrelationCenters) == 0L){
+      stop(
+        "No confirmed nuclear origins remain for primary-versus-coordinated correlation.",
+        call.=FALSE
+      )
+    }
+    CorrelationCenters[, center_id := paste0("AllOrigins_", seq_len(.N))]
+    CorrelationCenters[, chromosome_order := match(chrom, NuclearChromosomes)]
+    data.table::setorder(
+      CorrelationCenters, chromosome_order, center, chromStart, chromEnd
+    )
+  }
+  OriginalAllOriginMatrices <- lapply(
+    OriginalPlotTables,
+    BuildCenterMatrix,
+    Centers=CorrelationCenters,
+    signal_column="signal"
+  )
+  CoordinatedAllOriginMatrices <- lapply(
+    PlotTables,
+    BuildCenterMatrix,
+    Centers=CorrelationCenters,
+    signal_column="signal"
+  )
+  OriginRatioComparison <- data.table::rbindlist(lapply(
+    seq_len(NumberOfSamples),
+    function(index){
+      OriginalMatrix <- OriginalAllOriginMatrices[[index]]
+      CoordinatedMatrix <- CoordinatedAllOriginMatrices[[index]]
+      data.table::data.table(
+        center_id=CorrelationCenters$center_id,
+        center_name=CorrelationCenters$center_name,
+        chrom=CorrelationCenters$chrom,
+        chromStart=CorrelationCenters$chromStart,
+        chromEnd=CorrelationCenters$chromEnd,
+        center=CorrelationCenters$center,
+        timepoint=TimePoints[[index]],
+        primary_window_median=apply(OriginalMatrix, 1L, MedianOrNA),
+        coordinated_window_median=apply(
+          CoordinatedMatrix, 1L, MedianOrNA
+        ),
+        primary_window_mean=apply(OriginalMatrix, 1L, MeanOrNA),
+        coordinated_window_mean=apply(CoordinatedMatrix, 1L, MeanOrNA),
+        primary_center_value=OriginalMatrix[
+          , which.min(abs(Offsets)), drop=TRUE
+        ],
+        coordinated_center_value=CoordinatedMatrix[
+          , which.min(abs(Offsets)), drop=TRUE
+        ]
+      )
+    }
+  ))
+  SafeCorrelation <- function(first, second, method){
+    Complete <- is.finite(first) & is.finite(second)
+    if(sum(Complete) < 3L ||
+       length(unique(first[Complete])) < 2L ||
+       length(unique(second[Complete])) < 2L){
+      return(NA_real_)
+    }
+    suppressWarnings(stats::cor(
+      first[Complete], second[Complete], method=method
+    ))
+  }
+  OriginCorrelationStatistics <- OriginRatioComparison[, .(
+    origins_compared=sum(
+      is.finite(primary_window_mean) & is.finite(coordinated_window_mean)
+    ),
+    pearson_r=SafeCorrelation(
+      primary_window_mean, coordinated_window_mean, "pearson"
+    ),
+    spearman_rho=SafeCorrelation(
+      primary_window_mean, coordinated_window_mean, "spearman"
+    )
+  ), by=timepoint]
+  OriginCorrelationStatistics[, timepoint_order := match(timepoint, TimePoints)]
+  data.table::setorder(OriginCorrelationStatistics, timepoint_order)
+  OriginCorrelationStatistics[, timepoint_order := NULL]
+
   AverageProfiles <- data.table::rbindlist(lapply(CenterSets, function(center_set){
     data.table::rbindlist(lapply(seq_len(NumberOfSamples), function(index){
       Matrix <- CenterMatrices[[center_set]][[index]]
@@ -15930,18 +16071,35 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
     CenterSummary, CenterSummaryFile,
     sep="\t", quote=FALSE, na="NA"
   )
+  OriginRatioComparisonFile <- file.path(
+    RatiosDir,
+    paste0(SeriesTag, "_Primary_vs_Coordinated_AllOrigins.tsv")
+  )
+  data.table::fwrite(
+    OriginRatioComparison, OriginRatioComparisonFile,
+    sep="\t", quote=FALSE, na="NA"
+  )
+  OriginCorrelationStatisticsFile <- file.path(
+    RatiosDir,
+    paste0(SeriesTag, "_Primary_vs_Coordinated_AllOrigins_Correlations.tsv")
+  )
+  data.table::fwrite(
+    OriginCorrelationStatistics, OriginCorrelationStatisticsFile,
+    sep="\t", quote=FALSE, na="NA"
+  )
 
   TimeColors <- viridisLite::viridis(
     NumberOfSamples, option="D", begin=0.08, end=0.92, direction=1
   )
   Baseline <- if(Metric == "ip.score") 0 else if(Log2Values) 0 else 1
-  MetricLabel <- switch(
+  RawMetricLabel <- switch(
     Metric,
     ip.score=paste0(Assay, " coverage"),
     ratio.ipin=paste0(Assay, " / Input"),
     ratio.ipnoise=paste0(Assay, " / Noise"),
     ratio.ipin.noise="Clean enrichment"
   )
+  MetricLabel <- RawMetricLabel
   if(Log2Values){
     MetricLabel <- if(Metric == "ip.score"){
       paste0("log2(1 + ", MetricLabel, ")")
@@ -15949,6 +16107,105 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
       paste0("log2(", MetricLabel, ")")
     }
   }
+
+  OriginCorrelationPDF <- file.path(
+    PlotsDir,
+    paste0(
+      SeriesTag, "_", Assay, "_", Alignment,
+      "_Primary_vs_Coordinated_AllOrigins_Correlation.pdf"
+    )
+  )
+  grDevices::pdf(OriginCorrelationPDF, width=10, height=8, useDingbats=FALSE)
+  PanelsPerCorrelationPage <- 4L
+  CorrelationBaseline <- if(Metric == "ip.score") 0 else 1
+  for(PageStart in seq.int(1L, NumberOfSamples, by=PanelsPerCorrelationPage)){
+    PageIndexes <- PageStart:min(
+      NumberOfSamples, PageStart+PanelsPerCorrelationPage-1L
+    )
+    PageLayout <- if(length(PageIndexes) == 1L){
+      c(1, 1)
+    } else if(length(PageIndexes) == 2L){
+      c(1, 2)
+    } else {
+      c(2, 2)
+    }
+    graphics::par(
+      mfrow=PageLayout, mar=c(4.3, 4.5, 3.0, 1.0),
+      oma=c(0.8, 0.8, 2.5, 0.5)
+    )
+    for(index in PageIndexes){
+      TargetTimePoint <- TimePoints[[index]]
+      Panel <- OriginRatioComparison[timepoint == TargetTimePoint]
+      X <- Panel$primary_window_mean
+      Y <- Panel$coordinated_window_mean
+      Complete <- is.finite(X) & is.finite(Y)
+      Stats <- OriginCorrelationStatistics[timepoint == TargetTimePoint]
+      if(sum(Complete) == 0L){
+        graphics::plot.new()
+        graphics::title(main=TargetTimePoint)
+        graphics::text(0.5, 0.5, "No finite origin pairs")
+        next
+      }
+      Limits <- range(c(X[Complete], Y[Complete], CorrelationBaseline), finite=TRUE)
+      Padding <- diff(Limits)*0.05
+      if(!is.finite(Padding) || Padding <= 0){
+        Padding <- max(0.1, abs(Limits[[1]])*0.05)
+      }
+      Limits <- Limits+c(-Padding, Padding)
+      graphics::plot(
+        X[Complete], Y[Complete],
+        xlim=Limits, ylim=Limits, xaxs="i", yaxs="i", las=1, bty="n",
+        pch=16, cex=0.62,
+        col=grDevices::adjustcolor(TimeColors[[index]], alpha.f=0.52),
+        xlab=paste0("Primary ", RawMetricLabel, " (origin-window mean)"),
+        ylab=paste0("Coordinated ", RawMetricLabel, " (origin-window mean)"),
+        main=TargetTimePoint, cex.main=1.0, cex.lab=0.86, cex.axis=0.82
+      )
+      graphics::abline(0, 1, col="gray45", lty=2, lwd=1.0)
+      if(sum(Complete) >= 3L && length(unique(X[Complete])) >= 2L){
+        Fit <- tryCatch(
+          stats::lm(Y[Complete] ~ X[Complete]),
+          error=function(error) NULL
+        )
+        if(!is.null(Fit)) graphics::abline(Fit, col=TimeColors[[index]], lwd=1.4)
+      }
+      graphics::legend(
+        "topleft",
+        legend=c(
+          paste0("n = ", Stats$origins_compared),
+          paste0("Pearson r = ", formatC(Stats$pearson_r, digits=3, format="f")),
+          paste0(
+            "Spearman rho = ",
+            formatC(Stats$spearman_rho, digits=3, format="f")
+          )
+        ),
+        bty="n", cex=0.75
+      )
+      graphics::box(col="gray45")
+    }
+    LayoutSlots <- prod(PageLayout)
+    if(length(PageIndexes) < LayoutSlots){
+      for(index in seq_len(LayoutSlots-length(PageIndexes))){
+        graphics::plot.new()
+      }
+    }
+    graphics::mtext(
+      paste0(
+        SeriesName, " | primary versus coordinated ratios at all confirmed origins"
+      ),
+      side=3, outer=TRUE, line=1.1, font=2, cex=1.0
+    )
+    graphics::mtext(
+      paste0(
+        Assay, " | ", Alignment, " | selected metric: ", Metric,
+        " | same origin coordinates and +/-", format(Window, big.mark=","),
+        "-bp windows"
+      ),
+      side=3, outer=TRUE, line=0.15, cex=0.72, col="gray35"
+    )
+  }
+  grDevices::dev.off()
+
   SafeSmooth <- function(x, y){
     Result <- rep(NA_real_, length(y))
     Good <- which(is.finite(x) & is.finite(y))
@@ -16055,6 +16312,7 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
   grDevices::pdf(
     HeatmapPDF, width=HeatmapWidth, height=HeatmapHeight, useDingbats=FALSE
   )
+  HeatmapRowOrders <- setNames(vector("list", length(CenterSets)), CenterSets)
   for(center_set in CenterSets){
     Matrices <- CenterMatrices[[center_set]]
     RowMeans <- vapply(
@@ -16063,11 +16321,19 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
       numeric(nrow(CenterTables[[center_set]]))
     )
     if(is.null(dim(RowMeans))) RowMeans <- matrix(RowMeans, ncol=NumberOfSamples)
-    Ranking <- RowMeans
-    Ranking[!is.finite(Ranking)] <- -Inf
-    PeakTime <- max.col(Ranking, ties.method="first")
-    PeakAmplitude <- apply(Ranking, 1L, max)
-    RowOrder <- order(PeakTime, -PeakAmplitude, na.last=TRUE)
+    if(HeatmapOrderMode == "genomic"){
+      RowOrder <- seq_len(nrow(CenterTables[[center_set]]))
+    } else if(HeatmapOrderMode == "peak_time"){
+      Ranking <- RowMeans
+      Ranking[!is.finite(Ranking)] <- -Inf
+      PeakTime <- max.col(Ranking, ties.method="first")
+      PeakAmplitude <- apply(Ranking, 1L, max)
+      RowOrder <- order(PeakTime, -PeakAmplitude, na.last=TRUE)
+    } else {
+      RankingScore <- RowMeans[, HeatmapOrderIndex]
+      RowOrder <- order(-RankingScore, na.last=TRUE)
+    }
+    HeatmapRowOrders[[center_set]] <- RowOrder
     Matrices <- lapply(Matrices, function(Matrix) Matrix[RowOrder, , drop=FALSE])
     Values <- unlist(lapply(Matrices, as.vector), use.names=FALSE)
     Values <- Values[is.finite(Values)]
@@ -16108,6 +16374,16 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
       HeatmapColumn <- ((index-1L) %% HeatmapColumns)+1L
       Matrix <- Matrices[[index]]
       PlotMatrix <- Matrix
+      FinitePlotValues <- is.finite(PlotMatrix)
+      PlotMatrix[FinitePlotValues] <- pmin(
+        pmax(PlotMatrix[FinitePlotValues], Limits[[1]]),
+        Limits[[2]]
+      )
+      ## Base graphics places matrix row 1 at the bottom. Reverse only the
+      ## display matrix so the first (highest-ranked) row appears at the top.
+      if(nrow(PlotMatrix) > 1L){
+        PlotMatrix <- PlotMatrix[rev(seq_len(nrow(PlotMatrix))), , drop=FALSE]
+      }
       Y <- seq_len(nrow(PlotMatrix))
       if(nrow(PlotMatrix) == 1L){
         PlotMatrix <- rbind(PlotMatrix, PlotMatrix)
@@ -16123,7 +16399,7 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
       graphics::axis(1, las=1, cex.axis=0.82)
       if(HeatmapColumn == 1L){
         graphics::axis(
-          2, at=c(1, max(Y)), labels=c(1, nrow(Matrix)),
+          2, at=c(1, max(Y)), labels=c(nrow(Matrix), 1),
           las=1, cex.axis=0.75
         )
         graphics::mtext("Shared row order", side=2, line=2.5, cex=0.82)
@@ -16143,7 +16419,7 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
     graphics::mtext(
       paste0(
         PrettyCenterSet(center_set), " | n=", nrow(CenterTables[[center_set]]),
-        " | rows ordered by time of maximum window-mean signal"
+        " | rows ordered by ", HeatmapOrderDescription
       ),
       side=3, outer=TRUE, line=1.15, font=2, cex=1.05
     )
@@ -16362,18 +16638,36 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
     ylab="Eligible 2-kb chunks", xlab="Chromosome",
     main="Fixed background coordinates"
   )
+  MedianAssay <- vapply(seq_len(NumberOfSamples), function(index){
+    Values <- ChunkSummaries[[index]][
+      chunk_id %in% BackgroundChunks$chunk_id, ip_median
+    ]
+    stats::median(Values, na.rm=TRUE)
+  }, numeric(1))
   MedianInput <- vapply(seq_len(NumberOfSamples), function(index){
     Values <- ChunkSummaries[[index]][
       chunk_id %in% BackgroundChunks$chunk_id, input_median
     ]
     stats::median(Values, na.rm=TRUE)
   }, numeric(1))
+  BackgroundSignalMatrix <- rbind(Assay=MedianAssay, Input=MedianInput)
+  BackgroundSignalUpper <- max(BackgroundSignalMatrix, na.rm=TRUE)*1.16
+  if(!is.finite(BackgroundSignalUpper) || BackgroundSignalUpper <= 0){
+    BackgroundSignalUpper <- 1
+  }
   graphics::barplot(
-    MedianInput, names.arg=TimePoints,
-    col=TimeColors, border=TimeColors, las=1,
+    BackgroundSignalMatrix,
+    beside=TRUE, names.arg=TimePoints,
+    col=c("firebrick3", "steelblue3"),
+    border=c("firebrick4", "steelblue4"), las=1,
+    ylim=c(0, BackgroundSignalUpper),
     cex.names=if(NumberOfSamples > 6L) 0.72 else 0.85,
-    ylab="Median raw Input coverage", xlab="Time point",
-    main="Common-background Input signal"
+    ylab="Median raw coverage", xlab="Time point",
+    main="Common-background assay and Input signal"
+  )
+  graphics::legend(
+    "topright", legend=c(Assay, "Input"),
+    fill=c("firebrick3", "steelblue3"), border=NA, bty="n", cex=0.82
   )
   graphics::mtext(
     paste0(SeriesName, " | deterministic coordinated-background QC"),
@@ -16389,8 +16683,10 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
       "reference_timepoint", "peak_buffer_bp", "background_chunk_bp",
       "telomere_mask_bp", "rdna_mask", "common_candidate_chunks",
       "common_eligible_chunks", "center_sets", "metric", "window_bp",
-      "genome_window_kb", "log2_values", "y_val", "ratios_directory",
-      "peaks_directory", "plots_directory"
+      "genome_window_kb", "log2_values", "heatmap_order_by",
+      "heatmap_order_description", "telomere_center_policy", "y_val",
+      "origin_correlation_table", "origin_correlation_pdf",
+      "ratios_directory", "peaks_directory", "plots_directory"
     ),
     value=c(
       "ChIP_BrDU_TimeSeries_Analysis", SeriesName, Assay, Alignment,
@@ -16401,7 +16697,10 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
       paste0(rDNAChromosome, ":", rDNAStart, "-", rDNAEnd),
       nrow(CandidateChunks), nrow(BackgroundChunks),
       paste(CenterSets, collapse=";"), Metric, Window, WindowSizeKb,
-      Log2Values, if(is.null(y_val)) "automatic" else y_val,
+      Log2Values, HeatmapOrderBy, HeatmapOrderDescription,
+      "retained in centred reports; excluded only from background training",
+      if(is.null(y_val)) "automatic" else y_val,
+      OriginRatioComparisonFile, OriginCorrelationPDF,
       RatiosDir, PeaksDir, PlotsDir
     )
   )
@@ -16421,10 +16720,13 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
     background_qc_table=BackgroundQCFile,
     average_profile_table=AverageProfileFile,
     center_time_series_table=CenterSummaryFile,
+    origin_ratio_comparison_table=OriginRatioComparisonFile,
+    origin_correlation_statistics_table=OriginCorrelationStatisticsFile,
     genomewide_pdf=GenomewidePDF,
     average_profile_pdf=AverageProfilePDF,
     heatmap_pdf=HeatmapPDF,
     background_qc_pdf=BackgroundQCPDF,
+    origin_correlation_pdf=OriginCorrelationPDF,
     sample_dirs=SampleDirs,
     time_points=TimePoints,
     assay=Assay,
@@ -16441,8 +16743,16 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
     center_sets=CenterSets,
     center_counts=vapply(CenterTables, nrow, integer(1)),
     problematic_centers_removed=RemovedCenterCounts,
+    non_nuclear_or_rdna_centers_removed=RemovedCenterCounts,
+    telomere_proximal_centers_retained=TRUE,
+    correlation_origin_count=nrow(CorrelationCenters),
+    origin_correlation_statistics=OriginCorrelationStatistics,
     metric=Metric,
     log2_values=Log2Values,
+    heatmap_order_by=HeatmapOrderBy,
+    heatmap_order_description=HeatmapOrderDescription,
+    heatmap_row_orders=HeatmapRowOrders,
+    heatmap_out_of_range_values_saturated=TRUE,
     y_val=y_val,
     interpretation="relative enrichment; no absolute occupancy inference",
     primary_outputs_overwritten=FALSE,

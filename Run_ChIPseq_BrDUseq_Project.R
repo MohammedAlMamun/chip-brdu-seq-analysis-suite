@@ -137,6 +137,7 @@ ChIP_BrDU_TimeSeries_Analysis( SampleDirs=c("/full/path/to/G1",
                                Window=3000,
                                WindowSizeKb=50,
                                Log2Values=FALSE,
+                               HeatmapOrderBy="last",
                                y_val=NULL,
                                OutputDir="/full/path/to/MCM_TimeCourse" )
 
@@ -251,6 +252,7 @@ ChIP_BrDU_TimeSeries_Analysis( SampleDirs=c("/full/path/to/0min",
                                Window=3000,
                                WindowSizeKb=50,
                                Log2Values=FALSE,
+                               HeatmapOrderBy="last",
                                y_val=NULL,
                                OutputDir="/full/path/to/BrDU_TimeCourse" )
 
