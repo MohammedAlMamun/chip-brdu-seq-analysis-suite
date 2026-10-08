@@ -74,6 +74,7 @@ Multiple completed sample directories may be supplied to the region and rDNA plo
 - `WindowSizeKb` sets the whole-genome panel window in kilobases.
 - `Metric` selects one metric or `"all"` where supported.
 - `ComparisonMetric` selects the genomic-element boxplotter's final side-by-side comparison metric; its default is `"ratio.ipin.noise"` (Clean).
+- `CustomElements` maps user-defined labels in `Elements` to external headered interval or peak BED files; keep it `NULL` for bundled elements and sample-specific peak selectors.
 - `Log2Profile` or `Log2Values` controls transformation where supported.
 - `HeatmapXLim` and `HeatmapZLim` pass centered x-axis cropping and color-saturation limits from a complete run to its genomic-element heatmap report.
 - `y_val` fixes the plotting range when automatic scaling needs visual adjustment.

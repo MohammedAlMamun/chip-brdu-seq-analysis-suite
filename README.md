@@ -11,7 +11,7 @@ An R-based end-to-end analysis and visualization suite for paired-end *Saccharom
 - Strand-collapsed and strand-separated profiles where supported.
 - Whole-genome, coordinate-defined regional and exact two-repeat rDNA plots.
 - Average enrichment profiles over five calculated peak classes.
-- Average profiles, boxplots and heatmaps for curated genomic elements or calculated peak classes.
+- Average profiles, boxplots and heatmaps for curated genomic elements, calculated peak classes or named external interval/peak BED files.
 - Statistical side-by-side boxplot comparisons for selected element or peak cohorts.
 - A focused early-versus-late origin report with comparative boxplot p-values.
 - Paired ChIP–BrDU regional and genomic-element comparisons with separate y-axes.
@@ -82,6 +82,7 @@ ChIP_BrDU_Complete_Analysis(
   Directory="/full/path/to/ChIP_results",
   StrandModes=c("collapsed", "separated"),
   Elements=c("EarlyOrigin", "LateOrigin"),
+  CustomElements=NULL,
   Regions=NULL,
   HeatmapXLim=NULL,
   HeatmapZLim=NULL
@@ -116,6 +117,8 @@ Calculated peak selectors include:
 `GenomewidePeaks`, `NonOriginPeaks`, `OriginPeaks`, `EarlyOriginPeaks` and `LateOriginPeaks`.
 
 Peak cohorts use the saved primary-analysis peak files and are centred on `peakSummit`. `chrM` is excluded from genomic-element analyses.
+
+The enrichment, boxplot and heatmap functions also accept `CustomElements`, a named character vector connecting user-defined labels in `Elements` to external headered interval or peak BED files. Ratios still come from `SampleDir`; a custom file contributes only its genomic coordinates.
 
 ## Documentation
 

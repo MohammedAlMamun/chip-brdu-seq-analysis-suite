@@ -5259,6 +5259,73 @@ ChIP_BrDU_Peak_Enrichment_Plotter <- function(
   ))
 }
 
+.ChIPBrDU_Validate_Custom_Elements <- function(
+    CustomElements,
+    SelectedElements,
+    BuiltInElements){
+  Empty <- stats::setNames(character(), character())
+  if(is.null(CustomElements)) return(Empty)
+  if(!is.character(CustomElements) || length(CustomElements) == 0L ||
+     anyNA(CustomElements) || any(!nzchar(CustomElements))){
+    stop(
+      "CustomElements must be NULL or a named character vector of file paths.",
+      call.=FALSE
+    )
+  }
+  CustomNames <- names(CustomElements)
+  if(is.null(CustomNames) || anyNA(CustomNames) || any(!nzchar(CustomNames)) ||
+     anyDuplicated(CustomNames)){
+    stop(
+      "CustomElements must have unique non-empty names used as element labels.",
+      call.=FALSE
+    )
+  }
+  InvalidNames <- CustomNames[
+    !grepl("^[A-Za-z][A-Za-z0-9._-]*$", CustomNames)
+  ]
+  if(length(InvalidNames) > 0L){
+    stop(
+      "CustomElements name(s) must begin with a letter and contain only letters, numbers, '.', '_' or '-': ",
+      paste(InvalidNames, collapse=", "),
+      call.=FALSE
+    )
+  }
+  Collisions <- intersect(CustomNames, BuiltInElements)
+  if(length(Collisions) > 0L){
+    stop(
+      "CustomElements cannot replace built-in selector(s): ",
+      paste(Collisions, collapse=", "),
+      call.=FALSE
+    )
+  }
+  Unselected <- setdiff(CustomNames, SelectedElements)
+  if(length(Unselected) > 0L){
+    stop(
+      "Every CustomElements name must also be selected in Elements or ProfileElements. Unselected name(s): ",
+      paste(Unselected, collapse=", "),
+      call.=FALSE
+    )
+  }
+  Paths <- path.expand(unname(CustomElements))
+  Missing <- !file.exists(Paths) | dir.exists(Paths)
+  if(any(Missing)){
+    stop(
+      "Custom element file(s) not found:\n",
+      paste(Paths[Missing], collapse="\n"),
+      call.=FALSE
+    )
+  }
+  Paths <- normalizePath(Paths, winslash="/", mustWork=TRUE)
+  if(anyDuplicated(Paths)){
+    stop(
+      "Each CustomElements label must use a different annotation file.",
+      call.=FALSE
+    )
+  }
+  stats::setNames(Paths, CustomNames)
+}
+
+
 ## Genomic-element-centred ChIP/BrDU enrichment report. This is one
 ## self-contained public block; a separate run script can source this main
 ## script and call it directly. The function reads selected project-local
@@ -5283,7 +5350,9 @@ ChIP_BrDU_Peak_Enrichment_Plotter <- function(
 ## Elements=NULL retains the complete curated-element report. Elements may also
 ## select any combination of curated classes and the sample-specific selectors
 ## GenomewidePeaks, NonOriginPeaks, OriginPeaks, EarlyOriginPeaks, and
-## LateOriginPeaks. The report begins with selected-cohort counts, continues
+## LateOriginPeaks. CustomElements may map additional user-defined labels in
+## Elements to external headered interval or peak BED files. The report begins
+## with selected-cohort counts, continues
 ## with three cohort rows per page and four metric columns, and adds a final
 ## paired page for any complete curated Early/Late, CTrans/WTrans, or
 ## Convergent/Divergent pair in the selection.
@@ -5295,6 +5364,7 @@ ChIP_BrDU_Peak_Enrichment_Plotter <- function(
 ##   Alignment="generic",
 ##   StrandMode="collapsed",
 ##   Elements=c("EarlyOrigin", "LateOrigin", "OriginPeaks"),
+##   CustomElements=NULL,
 ##   Log2Profile=FALSE,
 ##   Window=3000,
 ##   y_lim=NULL
@@ -5308,7 +5378,8 @@ ChIP_BrDU_Genomic_Element_Enrichment_Plotter <- function(
     Window=3000,
     OutputDir=NULL,
     Elements=NULL,
-    y_lim=NULL){
+    y_lim=NULL,
+    CustomElements=NULL){
 
   ## Fixed display contract. Cohort selection is public; display styling stays
   ## internal so the reports retain one consistent publication layout.
@@ -5399,18 +5470,24 @@ ChIP_BrDU_Genomic_Element_Enrichment_Plotter <- function(
     if(anyDuplicated(Elements)){
       stop("Elements must not contain duplicated element classes.", call.=FALSE)
     }
-    InvalidElements <- setdiff(Elements, ValidElements)
-    if(length(InvalidElements) > 0L){
-      stop(
-        "Unsupported Elements value(s): ",
-        paste(InvalidElements, collapse=", "),
-        ". Supported values are: ",
-        paste(ValidElements, collapse=", "),
-        ".",
-        call.=FALSE
-      )
-    }
     ElementClasses <- Elements
+  }
+  CustomElementFiles <- .ChIPBrDU_Validate_Custom_Elements(
+    CustomElements,
+    SelectedElements=ElementClasses,
+    BuiltInElements=ValidElements
+  )
+  InvalidElements <- setdiff(
+    ElementClasses,
+    c(ValidElements, names(CustomElementFiles))
+  )
+  if(length(InvalidElements) > 0L){
+    stop(
+      "Unsupported Elements value(s): ",
+      paste(InvalidElements, collapse=", "),
+      ". Use a built-in selector or provide a matching named path in CustomElements.",
+      call.=FALSE
+    )
   }
 
   if(length(Window) != 1L || !is.numeric(Window) || !is.finite(Window) ||
@@ -5493,7 +5570,9 @@ ChIP_BrDU_Genomic_Element_Enrichment_Plotter <- function(
     vapply(
       ElementClasses,
       function(element_class){
-        if(element_class %in% PeakElementClasses){
+        if(element_class %in% names(CustomElementFiles)){
+          CustomElementFiles[[element_class]]
+        } else if(element_class %in% PeakElementClasses){
           file.path(
             PeakDir,
             paste0(
@@ -5546,9 +5625,26 @@ ChIP_BrDU_Genomic_Element_Enrichment_Plotter <- function(
       showProgress=FALSE,
       data.table=TRUE
     )
-    IsPeakClass <- element_class %in% PeakElementClasses
+    IsCustomClass <- element_class %in% names(CustomElementFiles)
+    PeakColumns <- c("chrom", "peakStart", "peakEnd", "peakSummit")
+    IntervalColumns <- c("chrom", "chromStart", "chromEnd")
+    IsPeakClass <- element_class %in% PeakElementClasses ||
+      (IsCustomClass && all(PeakColumns %in% names(Elements)))
+    if(IsCustomClass && !IsPeakClass &&
+       !all(IntervalColumns %in% names(Elements))){
+      stop(
+        PrettyElementClass(element_class),
+        " custom annotation must contain either peak columns ",
+        paste(PeakColumns, collapse=", "),
+        " or interval columns ", paste(IntervalColumns, collapse=", "),
+        ":\n", file,
+        call.=FALSE
+      )
+    }
     RequiredColumns <- if(IsPeakClass){
       c("chrom", "peakStart", "peakEnd", "peakSummit")
+    } else if(IsCustomClass){
+      IntervalColumns
     } else {
       c("chrom", "chromStart", "chromEnd", "name", "score", "strand", "type")
     }
@@ -5564,12 +5660,19 @@ ChIP_BrDU_Genomic_Element_Enrichment_Plotter <- function(
     if(IsPeakClass){
       PeakNames <- if("oriName" %in% names(Elements)){
         as.character(Elements$oriName)
+      } else if("name" %in% names(Elements)){
+        as.character(Elements$name)
       } else {
         rep(NA_character_, nrow(Elements))
       }
       MissingNames <- is.na(PeakNames) | !nzchar(PeakNames)
+      PeakLabel <- if(IsCustomClass){
+        element_class
+      } else {
+        PeakClassNames[[element_class]]
+      }
       PeakNames[MissingNames] <- paste0(
-        PeakClassNames[[element_class]], "Peak_", which(MissingNames)
+        PeakLabel, "Peak_", which(MissingNames)
       )
       Elements <- Elements[, .(
         chrom=as.character(chrom),
@@ -5577,17 +5680,32 @@ ChIP_BrDU_Genomic_Element_Enrichment_Plotter <- function(
         chromEnd=as.numeric(peakEnd),
         name=PeakNames,
         strand=".",
-        type=paste0(PeakClassNames[[element_class]], "Peak"),
+        type=paste0(PeakLabel, "Peak"),
         elementCenter=as.numeric(peakSummit)
       )]
     } else {
+      ElementNames <- if("name" %in% names(Elements)){
+        as.character(Elements$name)
+      } else {
+        paste0(element_class, "_", seq_len(nrow(Elements)))
+      }
+      ElementStrand <- if("strand" %in% names(Elements)){
+        as.character(Elements$strand)
+      } else {
+        rep(".", nrow(Elements))
+      }
+      ElementType <- if("type" %in% names(Elements)){
+        as.character(Elements$type)
+      } else {
+        rep(element_class, nrow(Elements))
+      }
       Elements <- Elements[, .(
         chrom=as.character(chrom),
         chromStart=as.numeric(chromStart),
         chromEnd=as.numeric(chromEnd),
-        name=as.character(name),
-        strand=as.character(strand),
-        type=as.character(type),
+        name=ElementNames,
+        strand=ElementStrand,
+        type=ElementType,
         elementCenter=(as.numeric(chromStart)+as.numeric(chromEnd))/2
       )]
     }
@@ -5633,7 +5751,11 @@ ChIP_BrDU_Genomic_Element_Enrichment_Plotter <- function(
       )
     }
     data.table::setorder(Elements, chrom, elementCenter, chromStart, chromEnd)
-    list(table=Elements, chrM_omitted=ChrMOmitted)
+    list(
+      table=Elements,
+      chrM_omitted=ChrMOmitted,
+      coordinate_type=if(IsPeakClass) "peakSummit" else "intervalMidpoint"
+    )
   }
 
   PrettyElementClass <- function(element_class){
@@ -5676,7 +5798,7 @@ ChIP_BrDU_Genomic_Element_Enrichment_Plotter <- function(
     )
   }
   DistanceLabel <- function(element_class){
-    if(element_class %in% PeakElementClasses){
+    if(identical(ElementCoordinateTypes[[element_class]], "peakSummit")){
       "Distance from peak summit (kb)"
     } else {
       "Distance from element midpoint (kb)"
@@ -5693,6 +5815,12 @@ ChIP_BrDU_Genomic_Element_Enrichment_Plotter <- function(
   Elements <- lapply(ElementResults, `[[`, "table")
   ElementCounts <- vapply(Elements, nrow, integer(1))
   ElementChrMOmitted <- vapply(ElementResults, `[[`, integer(1), "chrM_omitted")
+  ElementCoordinateTypes <- vapply(
+    ElementResults,
+    `[[`,
+    character(1),
+    "coordinate_type"
+  )
 
   RatioColumns <- c("chrom", "chromStart", "chromEnd", Metrics)
   ReadRatioTable <- function(file, table_label){
@@ -6563,6 +6691,8 @@ ChIP_BrDU_Genomic_Element_Enrichment_Plotter <- function(
     ratio_file=if(StrandMode == "collapsed") unname(RatioFiles[[1]]) else NULL,
     ratio_files=RatioFiles,
     element_files=ElementFiles,
+    custom_element_files=CustomElementFiles,
+    element_coordinate_types=ElementCoordinateTypes,
     elements=ElementClasses,
     peak_element_selectors=intersect(ElementClasses, PeakElementClasses),
     element_counts=ElementCounts,
@@ -6570,7 +6700,7 @@ ChIP_BrDU_Genomic_Element_Enrichment_Plotter <- function(
     excluded_annotations=c("ORF", "rDNA"),
     chromosomes=NuclearChromosomes,
     chrM_excluded=TRUE,
-    element_centering="curated BED interval midpoint or saved primary-analysis peakSummit; reference-coordinate order retained",
+    element_centering="interval-schema files use the interval midpoint; peak-schema files use peakSummit; reference-coordinate order retained",
     profiles=Profiles,
     metrics=Metrics,
     y_lim=y_lim,
@@ -6588,7 +6718,7 @@ ChIP_BrDU_Genomic_Element_Enrichment_Plotter <- function(
       pairwise="three paired rows x four metric columns"
     ),
     primary_ratio_output_only=TRUE,
-    annotation_source="project-local processed genomic-element BED files and/or sample-specific primary-analysis peak BED files",
+    annotation_source="bundled genomic-element BEDs, sample-specific peak BEDs, and/or explicitly named custom element files",
     plotter_operations=c(
       bam_reading=FALSE,
       coverage_reading=FALSE,
@@ -6651,13 +6781,15 @@ ChIP_BrDU_Genomic_Element_Enrichment_Plotter <- function(
 ##   Assay="ChIP",
 ##   Alignment="generic",
 ##   Elements=c("EarlyOrigin", "LateOrigin"),
+##   CustomElements=NULL,
 ##   Metric="all",
 ##   ComparisonMetric="ratio.ipin.noise",
 ##   Window=500,
 ##   Log2Values=TRUE
 ## )
 ## Peak selectors: GenomewidePeaks, NonOriginPeaks, OriginPeaks,
-## EarlyOriginPeaks, and LateOriginPeaks.
+## EarlyOriginPeaks, and LateOriginPeaks. CustomElements may map additional
+## user-defined labels in Elements to external headered interval or peak BEDs.
 ChIP_BrDU_Genomic_Element_Boxplotter <- function(
     SampleDir,
     Assay=c("ChIP", "BrDU"),
@@ -6667,7 +6799,8 @@ ChIP_BrDU_Genomic_Element_Boxplotter <- function(
     Window=500,
     Log2Values=TRUE,
     OutputDir=NULL,
-    ComparisonMetric="ratio.ipin.noise"){
+    ComparisonMetric="ratio.ipin.noise",
+    CustomElements=NULL){
 
   AllMetrics <- c(
     "ip.score", "ratio.ipin", "ratio.ipnoise", "ratio.ipin.noise"
@@ -6752,16 +6885,30 @@ ChIP_BrDU_Genomic_Element_Boxplotter <- function(
   if(anyDuplicated(Elements)){
     stop("Elements must not contain duplicated element classes.", call.=FALSE)
   }
-  InvalidElements <- setdiff(Elements, ValidElements)
+  CustomElementFiles <- .ChIPBrDU_Validate_Custom_Elements(
+    CustomElements,
+    SelectedElements=Elements,
+    BuiltInElements=ValidElements
+  )
+  InvalidElements <- setdiff(
+    Elements,
+    c(ValidElements, names(CustomElementFiles))
+  )
   if(length(InvalidElements) > 0L){
     stop(
       "Unsupported Elements value(s): ",
       paste(InvalidElements, collapse=", "),
-      ". Supported values are: ",
-      paste(ValidElements, collapse=", "),
-      ".",
+      ". Use a built-in selector or provide a matching named path in CustomElements.",
       call.=FALSE
     )
+  }
+  if(length(CustomElementFiles) > 0L){
+    CustomColors <- grDevices::hcl.colors(
+      length(CustomElementFiles),
+      palette="Dark 3"
+    )
+    names(CustomColors) <- names(CustomElementFiles)
+    ElementColors <- c(ElementColors, CustomColors)
   }
 
   if(!is.character(Metric) || length(Metric) == 0L ||
@@ -6896,7 +7043,9 @@ ChIP_BrDU_Genomic_Element_Boxplotter <- function(
     vapply(
       Elements,
       function(element_class){
-        if(element_class %in% PeakElements){
+        if(element_class %in% names(CustomElementFiles)){
+          CustomElementFiles[[element_class]]
+        } else if(element_class %in% PeakElements){
           file.path(
             PeakDir,
             paste0(
@@ -6935,9 +7084,26 @@ ChIP_BrDU_Genomic_Element_Boxplotter <- function(
       showProgress=FALSE,
       data.table=TRUE
     )
-    IsPeakClass <- element_class %in% PeakElements
+    IsCustomClass <- element_class %in% names(CustomElementFiles)
+    PeakColumns <- c("chrom", "peakStart", "peakEnd", "peakSummit")
+    IntervalColumns <- c("chrom", "chromStart", "chromEnd")
+    IsPeakClass <- element_class %in% PeakElements ||
+      (IsCustomClass && all(PeakColumns %in% names(ElementTable)))
+    if(IsCustomClass && !IsPeakClass &&
+       !all(IntervalColumns %in% names(ElementTable))){
+      stop(
+        PrettyElementClass(element_class),
+        " custom annotation must contain either peak columns ",
+        paste(PeakColumns, collapse=", "),
+        " or interval columns ", paste(IntervalColumns, collapse=", "),
+        ":\n", file,
+        call.=FALSE
+      )
+    }
     RequiredColumns <- if(IsPeakClass){
       c("chrom", "peakStart", "peakEnd", "peakSummit")
+    } else if(IsCustomClass){
+      IntervalColumns
     } else {
       c("chrom", "chromStart", "chromEnd", "name")
     }
@@ -6953,12 +7119,19 @@ ChIP_BrDU_Genomic_Element_Boxplotter <- function(
     if(IsPeakClass){
       PeakNames <- if("oriName" %in% names(ElementTable)){
         as.character(ElementTable$oriName)
+      } else if("name" %in% names(ElementTable)){
+        as.character(ElementTable$name)
       } else {
         rep(NA_character_, nrow(ElementTable))
       }
       MissingNames <- is.na(PeakNames) | !nzchar(PeakNames)
+      PeakLabel <- if(IsCustomClass){
+        element_class
+      } else {
+        PeakClassNames[[element_class]]
+      }
       PeakNames[MissingNames] <- paste0(
-        PeakClassNames[[element_class]], "Peak_", which(MissingNames)
+        PeakLabel, "Peak_", which(MissingNames)
       )
       ElementTable <- ElementTable[, .(
         chrom=as.character(chrom),
@@ -6968,11 +7141,16 @@ ChIP_BrDU_Genomic_Element_Boxplotter <- function(
         elementCenter=as.numeric(peakSummit)
       )]
     } else {
+      ElementNames <- if("name" %in% names(ElementTable)){
+        as.character(ElementTable$name)
+      } else {
+        paste0(element_class, "_", seq_len(nrow(ElementTable)))
+      }
       ElementTable <- ElementTable[, .(
         chrom=as.character(chrom),
         chromStart=as.numeric(chromStart),
         chromEnd=as.numeric(chromEnd),
-        element_name=as.character(name),
+        element_name=ElementNames,
         elementCenter=(as.numeric(chromStart)+as.numeric(chromEnd))/2
       )]
     }
@@ -7012,7 +7190,11 @@ ChIP_BrDU_Genomic_Element_Boxplotter <- function(
     ElementTable[, element_key := paste(
       chrom, chromStart, chromEnd, elementCenter, sep=":"
     )]
-    list(table=ElementTable, chrM_omitted=ChrMOmitted)
+    list(
+      table=ElementTable,
+      chrM_omitted=ChrMOmitted,
+      coordinate_type=if(IsPeakClass) "peakSummit" else "intervalMidpoint"
+    )
   }
 
   ElementResults <- lapply(
@@ -7029,6 +7211,12 @@ ChIP_BrDU_Genomic_Element_Boxplotter <- function(
     `[[`,
     integer(1),
     "chrM_omitted"
+  )
+  ElementCoordinateTypes <- vapply(
+    ElementResults,
+    `[[`,
+    character(1),
+    "coordinate_type"
   )
   AllElements <- data.table::rbindlist(
     ElementTables,
@@ -8106,6 +8294,8 @@ ChIP_BrDU_Genomic_Element_Boxplotter <- function(
     ratio_file=RatioFile,
     ratio_chrM_rows_omitted=RatioChrMOmitted,
     element_files=ElementFiles,
+    custom_element_files=CustomElementFiles,
+    element_coordinate_types=ElementCoordinateTypes,
     peak_element_selectors=intersect(Elements, PeakElements),
     element_counts=ElementCounts,
     element_chrM_records_omitted=ElementChrMOmitted,
@@ -8121,7 +8311,7 @@ ChIP_BrDU_Genomic_Element_Boxplotter <- function(
     excluded_annotations=c("ORF", "rDNA"),
     chromosomes=NuclearChromosomes,
     chrM_excluded=TRUE,
-    element_centering="curated BED interval midpoint or saved primary-analysis peakSummit; nearest saved ratio-window centre",
+    element_centering="interval-schema files use the interval midpoint; peak-schema files use peakSummit; nearest saved ratio-window centre",
     element_statistic="arithmetic mean of final saved metric values within the selected feature-centred window",
     edge_handling="missing chromosome-edge bins excluded; no interpolation or zero padding",
     outlier_points_plotted=FALSE,
@@ -8136,7 +8326,7 @@ ChIP_BrDU_Genomic_Element_Boxplotter <- function(
       "side-by-side ", ComparisonMetric, " comparison page"
     ),
     primary_ratio_output_only=TRUE,
-    annotation_source="project-local processed genomic-element BED files and/or sample-specific primary-analysis peak BED files",
+    annotation_source="bundled genomic-element BEDs, sample-specific peak BEDs, and/or explicitly named custom element files",
     plotter_operations=c(
       bam_reading=FALSE,
       coverage_reading=FALSE,
@@ -8178,7 +8368,8 @@ ChIP_BrDU_Genomic_Element_Boxplotter <- function(
 ## curated BED midpoint or saved peakSummit. Missing chromosome-edge bins remain
 ## unavailable, with no zero padding or interpolation. ORFs, rDNA, and chrM are
 ## excluded. Peak selectors are GenomewidePeaks, NonOriginPeaks, OriginPeaks,
-## EarlyOriginPeaks, and LateOriginPeaks.
+## EarlyOriginPeaks, and LateOriginPeaks. CustomElements may map additional
+## user-defined labels in Elements to external headered interval or peak BEDs.
 ##
 ## By default, rows are ordered independently within each cohort by decreasing
 ## mean clean enrichment across the complete extracted Window. OrderBy="genomic" retains
@@ -8196,6 +8387,7 @@ ChIP_BrDU_Genomic_Element_Boxplotter <- function(
 ##   Assay="ChIP",
 ##   Alignment="generic",
 ##   Elements=c("EarlyOrigin", "LateOrigin"),
+##   CustomElements=NULL,
 ##   Metric="all",
 ##   Window=3000,
 ##   Log2Values=TRUE,
@@ -8215,7 +8407,8 @@ ChIP_BrDU_Genomic_Element_Heatmap_Plotter <- function(
     OrderBy="ratio.ipin.noise",
     OutputDir=NULL,
     x_lim=NULL,
-    z_lim=NULL){
+    z_lim=NULL,
+    CustomElements=NULL){
 
   AllMetrics <- c(
     "ip.score", "ratio.ipin", "ratio.ipnoise", "ratio.ipin.noise"
@@ -8283,14 +8476,20 @@ ChIP_BrDU_Genomic_Element_Heatmap_Plotter <- function(
   if(anyDuplicated(Elements)){
     stop("Elements must not contain duplicated element classes.", call.=FALSE)
   }
-  InvalidElements <- setdiff(Elements, ValidElements)
+  CustomElementFiles <- .ChIPBrDU_Validate_Custom_Elements(
+    CustomElements,
+    SelectedElements=Elements,
+    BuiltInElements=ValidElements
+  )
+  InvalidElements <- setdiff(
+    Elements,
+    c(ValidElements, names(CustomElementFiles))
+  )
   if(length(InvalidElements) > 0L){
     stop(
       "Unsupported Elements value(s): ",
       paste(InvalidElements, collapse=", "),
-      ". Supported values are: ",
-      paste(ValidElements, collapse=", "),
-      ".",
+      ". Use a built-in selector or provide a matching named path in CustomElements.",
       call.=FALSE
     )
   }
@@ -8457,7 +8656,9 @@ ChIP_BrDU_Genomic_Element_Heatmap_Plotter <- function(
     vapply(
       SelectedElements,
       function(element_class){
-        if(element_class %in% PeakElements){
+        if(element_class %in% names(CustomElementFiles)){
+          CustomElementFiles[[element_class]]
+        } else if(element_class %in% PeakElements){
           file.path(
             PeakDir,
             paste0(
@@ -8496,9 +8697,26 @@ ChIP_BrDU_Genomic_Element_Heatmap_Plotter <- function(
       showProgress=FALSE,
       data.table=TRUE
     )
-    IsPeakClass <- element_class %in% PeakElements
+    IsCustomClass <- element_class %in% names(CustomElementFiles)
+    PeakColumns <- c("chrom", "peakStart", "peakEnd", "peakSummit")
+    IntervalColumns <- c("chrom", "chromStart", "chromEnd")
+    IsPeakClass <- element_class %in% PeakElements ||
+      (IsCustomClass && all(PeakColumns %in% names(ElementTable)))
+    if(IsCustomClass && !IsPeakClass &&
+       !all(IntervalColumns %in% names(ElementTable))){
+      stop(
+        PrettyElementClass(element_class),
+        " custom annotation must contain either peak columns ",
+        paste(PeakColumns, collapse=", "),
+        " or interval columns ", paste(IntervalColumns, collapse=", "),
+        ":\n", file,
+        call.=FALSE
+      )
+    }
     RequiredColumns <- if(IsPeakClass){
       c("chrom", "peakStart", "peakEnd", "peakSummit")
+    } else if(IsCustomClass){
+      IntervalColumns
     } else {
       c("chrom", "chromStart", "chromEnd", "name")
     }
@@ -8514,12 +8732,19 @@ ChIP_BrDU_Genomic_Element_Heatmap_Plotter <- function(
     if(IsPeakClass){
       PeakNames <- if("oriName" %in% names(ElementTable)){
         as.character(ElementTable$oriName)
+      } else if("name" %in% names(ElementTable)){
+        as.character(ElementTable$name)
       } else {
         rep(NA_character_, nrow(ElementTable))
       }
       MissingNames <- is.na(PeakNames) | !nzchar(PeakNames)
+      PeakLabel <- if(IsCustomClass){
+        element_class
+      } else {
+        PeakClassNames[[element_class]]
+      }
       PeakNames[MissingNames] <- paste0(
-        PeakClassNames[[element_class]], "Peak_", which(MissingNames)
+        PeakLabel, "Peak_", which(MissingNames)
       )
       ElementTable <- ElementTable[, .(
         chrom=as.character(chrom),
@@ -8529,11 +8754,16 @@ ChIP_BrDU_Genomic_Element_Heatmap_Plotter <- function(
         elementCenter=as.numeric(peakSummit)
       )]
     } else {
+      ElementNames <- if("name" %in% names(ElementTable)){
+        as.character(ElementTable$name)
+      } else {
+        paste0(element_class, "_", seq_len(nrow(ElementTable)))
+      }
       ElementTable <- ElementTable[, .(
         chrom=as.character(chrom),
         chromStart=as.numeric(chromStart),
         chromEnd=as.numeric(chromEnd),
-        element_name=as.character(name),
+        element_name=ElementNames,
         elementCenter=(as.numeric(chromStart)+as.numeric(chromEnd))/2
       )]
     }
@@ -8583,7 +8813,11 @@ ChIP_BrDU_Genomic_Element_Heatmap_Plotter <- function(
     ElementTable[, element_key := paste(
       chrom, chromStart, chromEnd, elementCenter, sep=":"
     )]
-    list(table=ElementTable, chrM_omitted=ChrMOmitted)
+    list(
+      table=ElementTable,
+      chrM_omitted=ChrMOmitted,
+      coordinate_type=if(IsPeakClass) "peakSummit" else "intervalMidpoint"
+    )
   }
 
   ElementResults <- lapply(
@@ -8600,6 +8834,12 @@ ChIP_BrDU_Genomic_Element_Heatmap_Plotter <- function(
     `[[`,
     integer(1),
     "chrM_omitted"
+  )
+  ElementCoordinateTypes <- vapply(
+    ElementResults,
+    `[[`,
+    character(1),
+    "coordinate_type"
   )
   AllElements <- data.table::rbindlist(
     ElementTables,
@@ -9179,7 +9419,7 @@ ChIP_BrDU_Genomic_Element_Heatmap_Plotter <- function(
       cex.axis=0.82
     )
     graphics::mtext(
-      if(element_class %in% PeakElements){
+      if(identical(ElementCoordinateTypes[[element_class]], "peakSummit")){
         "Distance from peak summit (kb)"
       } else {
         "Distance from element midpoint (kb)"
@@ -9376,6 +9616,8 @@ ChIP_BrDU_Genomic_Element_Heatmap_Plotter <- function(
     ratio_file=RatioFile,
     ratio_chrM_rows_omitted=RatioChrMOmitted,
     element_files=ElementFiles,
+    custom_element_files=CustomElementFiles,
+    element_coordinate_types=ElementCoordinateTypes,
     peak_element_selectors=intersect(SelectedElements, PeakElements),
     element_counts=ElementCounts,
     element_chrM_records_omitted=ElementChrMOmitted,
@@ -9391,7 +9633,7 @@ ChIP_BrDU_Genomic_Element_Heatmap_Plotter <- function(
     excluded_annotations=c("ORF", "rDNA"),
     chromosomes=NuclearChromosomes,
     chrM_excluded=TRUE,
-    element_centering="curated BED interval midpoint or saved primary-analysis peakSummit; nearest saved ratio-window centre",
+    element_centering="interval-schema files use the interval midpoint; peak-schema files use peakSummit; nearest saved ratio-window centre",
     edge_handling="missing chromosome-edge bins retained as unavailable; no interpolation or zero padding",
     heatmap_smoothing=FALSE,
     row_normalization=FALSE,
@@ -9401,7 +9643,7 @@ ChIP_BrDU_Genomic_Element_Heatmap_Plotter <- function(
     page_layout="one selected element cohort per page; all selected metrics in one horizontal row",
     pdf_dimensions_inches=c(width=PdfWidth, height=PdfHeight),
     primary_ratio_output_only=TRUE,
-    annotation_source="project-local processed genomic-element BED files and/or sample-specific primary-analysis peak BED files",
+    annotation_source="bundled genomic-element BEDs, sample-specific peak BEDs, and/or explicitly named custom element files",
     plotter_operations=c(
       bam_reading=FALSE,
       coverage_reading=FALSE,
@@ -16596,6 +16838,8 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
 ## ProfileElements=NULL retains all curated cohorts in the profile report;
 ## Elements controls the boxplot and heatmap cohorts. Either may use the five
 ## sample-specific *Peaks selectors documented by the individual plotters.
+## CustomElements may map additional labels used by Elements and/or
+## ProfileElements to external headered interval or peak BED files.
 ## HeatmapXLim and HeatmapZLim forward the optional display-only x_lim and z_lim
 ## controls to the genomic-element heatmap stage.
 ##
@@ -16609,6 +16853,7 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
 ##   Alignment="generic",
 ##   ExpTitle="Smc5",
 ##   Directory="/path/to/ChIP_results",
+##   CustomElements=NULL,
 ##   HeatmapXLim=2000,
 ##   HeatmapZLim=c(ip.score=10, ratio.ipin=3, ratio.ipnoise=5,
 ##                 ratio.ipin.noise=4)
@@ -16629,7 +16874,8 @@ ChIP_BrDU_Complete_Analysis <- function(
     ReportDir=NULL,
     ProfileElements=NULL,
     HeatmapXLim=NULL,
-    HeatmapZLim=NULL){
+    HeatmapZLim=NULL,
+    CustomElements=NULL){
 
   Assay <- match.arg(Assay)
   Alignment <- match.arg(Alignment)
@@ -16753,17 +16999,6 @@ ChIP_BrDU_Complete_Analysis <- function(
     "GenomewidePeaks", "NonOriginPeaks", "OriginPeaks",
     "EarlyOriginPeaks", "LateOriginPeaks"
   )
-  InvalidElements <- setdiff(Elements, SupportedElementSelectors)
-  if(length(InvalidElements) > 0L){
-    stop(
-      "Unsupported Elements value(s): ",
-      paste(InvalidElements, collapse=", "),
-      ". Supported values are: ",
-      paste(SupportedElementSelectors, collapse=", "),
-      ".",
-      call.=FALSE
-    )
-  }
   if(!is.null(ProfileElements)){
     if(!is.character(ProfileElements) || length(ProfileElements) == 0L ||
        any(is.na(ProfileElements) | !nzchar(ProfileElements))){
@@ -16773,20 +17008,53 @@ ChIP_BrDU_Complete_Analysis <- function(
       )
     }
     ProfileElements <- unique(ProfileElements)
+  }
+  SelectedElementNames <- unique(c(Elements, ProfileElements))
+  CustomElementFiles <- .ChIPBrDU_Validate_Custom_Elements(
+    CustomElements,
+    SelectedElements=SelectedElementNames,
+    BuiltInElements=SupportedElementSelectors
+  )
+  SupportedOrCustom <- c(
+    SupportedElementSelectors,
+    names(CustomElementFiles)
+  )
+  InvalidElements <- setdiff(Elements, SupportedOrCustom)
+  if(length(InvalidElements) > 0L){
+    stop(
+      "Unsupported Elements value(s): ",
+      paste(InvalidElements, collapse=", "),
+      ". Use a built-in selector or provide a matching named path in CustomElements.",
+      call.=FALSE
+    )
+  }
+  if(!is.null(ProfileElements)){
     InvalidProfileElements <- setdiff(
       ProfileElements,
-      SupportedElementSelectors
+      SupportedOrCustom
     )
     if(length(InvalidProfileElements) > 0L){
       stop(
         "Unsupported ProfileElements value(s): ",
         paste(InvalidProfileElements, collapse=", "),
-        ". Supported values are: ",
-        paste(SupportedElementSelectors, collapse=", "),
-        ".",
+        ". Use a built-in selector or provide a matching named path in CustomElements.",
         call.=FALSE
       )
     }
+  }
+  BoxHeatmapCustomElements <- CustomElementFiles[
+    names(CustomElementFiles) %in% Elements
+  ]
+  if(length(BoxHeatmapCustomElements) == 0L){
+    BoxHeatmapCustomElements <- NULL
+  }
+  ProfileCustomElements <- if(is.null(ProfileElements)){
+    NULL
+  } else {
+    CustomElementFiles[names(CustomElementFiles) %in% ProfileElements]
+  }
+  if(length(ProfileCustomElements) == 0L){
+    ProfileCustomElements <- NULL
   }
 
   if(!is.null(Regions)){
@@ -17009,6 +17277,7 @@ ChIP_BrDU_Complete_Analysis <- function(
           Alignment=Alignment,
           StrandMode=StrandMode,
           Elements=ProfileElements,
+          CustomElements=ProfileCustomElements,
           OutputDir=ElementProfileDir
         )
       )
@@ -17023,6 +17292,7 @@ ChIP_BrDU_Complete_Analysis <- function(
         Assay=Assay,
         Alignment=Alignment,
         Elements=Elements,
+        CustomElements=BoxHeatmapCustomElements,
         OutputDir=BoxplotDir
       )
     )
@@ -17035,6 +17305,7 @@ ChIP_BrDU_Complete_Analysis <- function(
         Assay=Assay,
         Alignment=Alignment,
         Elements=Elements,
+        CustomElements=BoxHeatmapCustomElements,
         OutputDir=HeatmapDir,
         x_lim=HeatmapXLim,
         z_lim=HeatmapZLim
@@ -17128,6 +17399,7 @@ ChIP_BrDU_Complete_Analysis <- function(
     pdfs=CompletedPdfs,
     results=Results,
     complete=nrow(FailedRows) == 0L,
+    custom_element_files=CustomElementFiles,
     heatmap_x_lim=HeatmapXLim,
     heatmap_z_lim=HeatmapZLim
   ))

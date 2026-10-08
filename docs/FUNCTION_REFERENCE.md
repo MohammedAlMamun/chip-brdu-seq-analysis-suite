@@ -8,7 +8,7 @@ For argument-by-argument guidance and complete call examples, see the [complete 
 |---|---|
 | `ChIP_BrDU_Project_Paths()` | Resolves and validates the script-relative support folder. |
 | `ChIP_BrDU_Primary_Analysis()` | Runs primary ChIP or BrDU processing for `generic`, `malign` or `mrdna`. |
-| `ChIP_BrDU_Complete_Analysis()` | Runs primary analysis and the standard downstream report suite, recording a concise manifest and forwarding optional heatmap x/z display limits. |
+| `ChIP_BrDU_Complete_Analysis()` | Runs primary analysis and the standard downstream report suite, forwarding optional custom elements and heatmap x/z display limits while recording a concise manifest. |
 
 ## Profile and enrichment reports
 
@@ -18,10 +18,10 @@ For argument-by-argument guidance and complete call examples, see the [complete 
 | `ChIP_BrDU_Region_Plotter()` | 1 or more | collapsed, separated | Profiles over user-supplied chromosome coordinates. |
 | `ChIP_BrDU_rDNA_Plotter()` | 1 or more | collapsed, separated | Profiles and exact feature annotations over the custom two-repeat rDNA reference. |
 | `ChIP_BrDU_Peak_Enrichment_Plotter()` | 1 | collapsed, separated | Average profiles for five saved peak classes, with optional shared or metric-specific manual y limits. |
-| `ChIP_BrDU_Genomic_Element_Enrichment_Plotter()` | 1 | collapsed, separated | Average profiles for curated features or saved peak classes, with optional shared or metric-specific manual y limits. |
+| `ChIP_BrDU_Genomic_Element_Enrichment_Plotter()` | 1 | collapsed, separated | Average profiles for curated features, saved peaks or named external element files, with optional manual y limits. |
 | `ChIP_BrDU_Early_Late_Enrichment_Plotter()` | 1 | collapsed, separated | Focused Early/Late report with individual profiles, paired profiles, comparative boxplots, Wilcoxon p-values and optional manual y limits. |
-| `ChIP_BrDU_Genomic_Element_Boxplotter()` | 1 | collapsed | Element-centred distributions plus a final single-metric statistical comparison of all selected cohorts. |
-| `ChIP_BrDU_Genomic_Element_Heatmap_Plotter()` | 1 | collapsed | Publication-oriented option-C viridis heatmaps with optional centered `x_lim` cropping and manual `z_lim` saturation. |
+| `ChIP_BrDU_Genomic_Element_Boxplotter()` | 1 | collapsed | Curated, saved-peak or external-file distributions plus a final single-metric statistical comparison. |
+| `ChIP_BrDU_Genomic_Element_Heatmap_Plotter()` | 1 | collapsed | Publication-oriented curated, saved-peak or external-file heatmaps with optional `x_lim` and `z_lim`. |
 | `ChIP_BrDU_TimeSeries_Analysis()` | 2–10 | collapsed | Re-estimates backgrounds on one fixed grid and produces coordinated ratios, line-based average profiles, line- or histogram-style genome-wide profiles, shared-order heatmaps and QC. |
 
 ## Direct ChIP–BrDU comparisons

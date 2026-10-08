@@ -232,7 +232,8 @@ ChIP_BrDU_Complete_Analysis(
   ReportDir=NULL,
   ProfileElements=NULL,
   HeatmapXLim=NULL,
-  HeatmapZLim=NULL
+  HeatmapZLim=NULL,
+  CustomElements=NULL
 )
 ```
 
@@ -251,6 +252,7 @@ ChIP_BrDU_Complete_Analysis(
 | `slidingWindow` | `"YES"` | Passed to the primary workflow. Keep `"YES"` for the established sliding-window output expected by downstream functions. |
 | `StrandModes` | `c("collapsed", "separated")` | One or both strand displays to generate for compatible profile reports. Duplicate values are removed. |
 | `Elements` | Early and Late origins | Curated or peak cohorts used by the boxplot and heatmap reports. At least one supported selector is required. |
+| `CustomElements` | `NULL` | Optional named character vector mapping user-defined labels in `Elements` and/or `ProfileElements` to external headered interval or peak BED files. Standard bundled selectors need no mapping. |
 | `Regions` | `NULL` | Optional data frame with `Chromosome`, `RegionStart`, and `RegionEnd` columns. Each row generates regional reports in the requested strand modes; it is not allowed with `mrdna`. |
 | `ReportDir` | `NULL` | Destination for report subfolders and `Analysis_Manifest.tsv`. `NULL` creates `Complete_Analysis_Reports` inside the sample directory. |
 | `ProfileElements` | `NULL` | Cohorts used by the genomic-element average-profile report. `NULL` requests the full curated set; a character vector may select curated elements or saved peak cohorts. |
@@ -280,6 +282,7 @@ run <- ChIP_BrDU_Complete_Analysis(
   ExpTitle="Smc5_60HU",
   Directory="/data/analysis",
   Elements=c("EarlyOrigin", "LateOrigin", "OriginPeaks"),
+  CustomElements=NULL,
   HeatmapXLim=2000,
   HeatmapZLim=c(
     ip.score=10,
@@ -536,7 +539,8 @@ ChIP_BrDU_Genomic_Element_Enrichment_Plotter(
   Window=3000,
   OutputDir=NULL,
   Elements=NULL,
-  y_lim=NULL
+  y_lim=NULL,
+  CustomElements=NULL
 )
 ```
 
@@ -552,6 +556,7 @@ ChIP_BrDU_Genomic_Element_Enrichment_Plotter(
 | `Window` | `3000` | Positive half-window in base pairs around each curated midpoint or saved peak summit. |
 | `OutputDir` | `NULL` | PDF destination; `NULL` writes to `SampleDir`. |
 | `Elements` | `NULL` | `NULL` requests the complete curated-element report. Otherwise supply one or more supported curated or peak selectors without duplicates. |
+| `CustomElements` | `NULL` | Optional named paths for nonstandard labels listed in `Elements`. Peak-schema files use `peakSummit`; interval-schema files use their midpoint. |
 | `y_lim` | `NULL` | `NULL` keeps automatic scaling. Use `c(lower, upper)` for one range across all metrics, or a named list such as `list(ip.score=c(0, 300), ratio.ipin.noise=c(0.8, 3))` for selected metrics. The range is shared by the corresponding individual and paired panels. |
 
 ### Report organization
@@ -571,11 +576,32 @@ ChIP_BrDU_Genomic_Element_Enrichment_Plotter(
   Alignment="generic",
   StrandMode="collapsed",
   Elements=c("EarlyOrigin", "LateOrigin", "OriginPeaks"),
+  CustomElements=NULL,
   Log2Profile=FALSE,
   Window=3000,
   y_lim=NULL
 )
 ```
+
+To plot ChIP enrichment at Origin peaks called in a separate BrDU analysis, keep the ChIP folder in `SampleDir` and map a custom label to the BrDU peak file:
+
+```r
+ChIP_BrDU_Genomic_Element_Enrichment_Plotter(
+  SampleDir="/data/analysis/ChIP_sample",
+  Assay="ChIP",
+  Alignment="malign",
+  StrandMode="collapsed",
+  Elements="BrDUOriginPeaks",
+  CustomElements=c(
+    BrDUOriginPeaks="/data/analysis/BrDU_sample/Peaks_ma/BrDU_sample_Origin_Peaks.bed"
+  ),
+  Log2Profile=FALSE,
+  Window=3000,
+  y_lim=NULL
+)
+```
+
+Every custom label must appear in `Elements`, begin with a letter, use only letters, numbers, `.`, `_`, or `-`, and must not replace a built-in selector. Custom files require a header. Peak files must contain `chrom`, `peakStart`, `peakEnd`, and `peakSummit`; `oriName` or `name` is optional. Interval files must contain `chrom`, `chromStart`, and `chromEnd`; `name`, `strand`, and `type` are optional. The assay ratios always come from `SampleDir`; custom files supply coordinates only.
 
 <a id="chip_brdu_early_late_enrichment_plotter"></a>
 
@@ -647,7 +673,8 @@ ChIP_BrDU_Genomic_Element_Boxplotter(
   Window=500,
   Log2Values=TRUE,
   OutputDir=NULL,
-  ComparisonMetric="ratio.ipin.noise"
+  ComparisonMetric="ratio.ipin.noise",
+  CustomElements=NULL
 )
 ```
 
@@ -659,6 +686,7 @@ ChIP_BrDU_Genomic_Element_Boxplotter(
 | `Assay` | ChIP or BrDU | Selects the assay-specific collapsed ratio file and report labels. |
 | `Alignment` | generic or malign | Selects the corresponding nuclear ratio and peak folders. |
 | `Elements` | Early and Late origins | One or more unique curated or peak selectors. Each selected record is one statistical unit in its cohort. |
+| `CustomElements` | `NULL` | Optional named paths for nonstandard labels listed in `Elements`, using the custom-file schema documented for the genomic-element enrichment plotter. |
 | `Metric` | `"all"` | Controls the regular element-specific pages. Use `"all"`, one metric, or a vector of unique final metric names. |
 | `Window` | `500` | Non-negative half-window in base pairs used to calculate each element's arithmetic mean. `0` uses the ratio interval nearest the feature centre. |
 | `Log2Values` | `TRUE` | `TRUE` displays `log2(1+x)` for coverage and `log2(x)` for positive ratio values. `FALSE` preserves the untransformed saved scale. |
@@ -683,6 +711,7 @@ ChIP_BrDU_Genomic_Element_Boxplotter(
   Assay="ChIP",
   Alignment="generic",
   Elements=c("EarlyOrigin", "LateOrigin", "OriginPeaks"),
+  CustomElements=NULL,
   Metric="all",
   Window=500,
   Log2Values=TRUE,
@@ -708,7 +737,8 @@ ChIP_BrDU_Genomic_Element_Heatmap_Plotter(
   OrderBy="ratio.ipin.noise",
   OutputDir=NULL,
   x_lim=NULL,
-  z_lim=NULL
+  z_lim=NULL,
+  CustomElements=NULL
 )
 ```
 
@@ -720,6 +750,7 @@ ChIP_BrDU_Genomic_Element_Heatmap_Plotter(
 | `Assay` | ChIP or BrDU | Selects the assay-specific collapsed ratio file and titles. |
 | `Alignment` | generic or malign | Selects standard or multi-alignment nuclear output folders. |
 | `Elements` | Early and Late origins | One or more unique curated or peak cohorts. A separate page is created for each cohort. |
+| `CustomElements` | `NULL` | Optional named paths for nonstandard labels listed in `Elements`, using the custom-file schema documented for the genomic-element enrichment plotter. |
 | `Metric` | `"all"` | Selects `"all"`, one metric, or a vector of unique metrics to arrange in one horizontal row. |
 | `Window` | `3000` | Positive half-window in base pairs around each feature midpoint or peak summit. |
 | `Log2Values` | `TRUE` | Uses `log2(1+x)` for coverage and `log2(x)` for positive ratio values when `TRUE`; raw values are retained when `FALSE`. |
@@ -744,6 +775,7 @@ ChIP_BrDU_Genomic_Element_Heatmap_Plotter(
   Assay="ChIP",
   Alignment="generic",
   Elements=c("EarlyOrigin", "LateOrigin", "OriginPeaks"),
+  CustomElements=NULL,
   Metric="all",
   Window=3000,
   Log2Values=TRUE,
