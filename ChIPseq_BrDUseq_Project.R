@@ -15725,7 +15725,6 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
   message("Estimating coordinated backgrounds and writing ratio tables...")
   CoordinatedRatioFiles <- character(NumberOfSamples)
   PlotTables <- vector("list", NumberOfSamples)
-  OriginalPlotTables <- vector("list", NumberOfSamples)
   for(index in seq_len(NumberOfSamples)){
     message("  Coordinated ratios: ", TimePoints[[index]])
     Coverage <- ReadCollapsedCoverage(SampleFiles[[index]], TimePoints[[index]])
@@ -15740,12 +15739,6 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
         call.=FALSE
       )
     }
-    OriginalPlotTable <- Primary[
-      chrom %in% NuclearChromosomes,
-      .(chrom, chromStart, chromEnd, signal=get(Metric))
-    ]
-    data.table::setorder(OriginalPlotTable, chrom, chromStart)
-    OriginalPlotTables[[index]] <- OriginalPlotTable
     IPNoise <- PredictBackground(Coverage, ChunkSummaries[[index]], "ip_median")
     InputNoiseRaw <- PredictBackground(
       Coverage, ChunkSummaries[[index]], "input_median"
@@ -15792,12 +15785,11 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
     PlotTables[[index]] <- PlotTable
     rm(
       Coverage, Primary, IPNoise, InputNoiseRaw, InputNoise,
-      RatioIPNoise, RatioClean, PlotTable, OriginalPlotTable
+      RatioIPNoise, RatioClean, PlotTable
     )
     gc(verbose=FALSE)
   }
   names(PlotTables) <- TimePoints
-  names(OriginalPlotTables) <- TimePoints
   names(CoordinatedRatioFiles) <- TimePoints
 
   PrettyCenterSet <- function(center_set){
@@ -15940,94 +15932,6 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
     if(length(values) == 0L) NA_real_ else mean(values)
   }
 
-  ## Compare the original primary-analysis metric with the coordinated metric
-  ## at one common set of confirmed origins. This report is generated even when
-  ## AllOrigins was not requested in CenterSets.
-  if("AllOrigins" %in% names(CenterTables)){
-    CorrelationCenters <- data.table::copy(CenterTables$AllOrigins)
-  } else {
-    CorrelationCenters <- ReadCuratedCenters("AllOrigins")
-    CorrelationCenters <- CorrelationCenters[
-      !ProblematicCenter(chrom, center)
-    ]
-    if(nrow(CorrelationCenters) == 0L){
-      stop(
-        "No confirmed nuclear origins remain for primary-versus-coordinated correlation.",
-        call.=FALSE
-      )
-    }
-    CorrelationCenters[, center_id := paste0("AllOrigins_", seq_len(.N))]
-    CorrelationCenters[, chromosome_order := match(chrom, NuclearChromosomes)]
-    data.table::setorder(
-      CorrelationCenters, chromosome_order, center, chromStart, chromEnd
-    )
-  }
-  OriginalAllOriginMatrices <- lapply(
-    OriginalPlotTables,
-    BuildCenterMatrix,
-    Centers=CorrelationCenters,
-    signal_column="signal"
-  )
-  CoordinatedAllOriginMatrices <- lapply(
-    PlotTables,
-    BuildCenterMatrix,
-    Centers=CorrelationCenters,
-    signal_column="signal"
-  )
-  OriginRatioComparison <- data.table::rbindlist(lapply(
-    seq_len(NumberOfSamples),
-    function(index){
-      OriginalMatrix <- OriginalAllOriginMatrices[[index]]
-      CoordinatedMatrix <- CoordinatedAllOriginMatrices[[index]]
-      data.table::data.table(
-        center_id=CorrelationCenters$center_id,
-        center_name=CorrelationCenters$center_name,
-        chrom=CorrelationCenters$chrom,
-        chromStart=CorrelationCenters$chromStart,
-        chromEnd=CorrelationCenters$chromEnd,
-        center=CorrelationCenters$center,
-        timepoint=TimePoints[[index]],
-        primary_window_median=apply(OriginalMatrix, 1L, MedianOrNA),
-        coordinated_window_median=apply(
-          CoordinatedMatrix, 1L, MedianOrNA
-        ),
-        primary_window_mean=apply(OriginalMatrix, 1L, MeanOrNA),
-        coordinated_window_mean=apply(CoordinatedMatrix, 1L, MeanOrNA),
-        primary_center_value=OriginalMatrix[
-          , which.min(abs(Offsets)), drop=TRUE
-        ],
-        coordinated_center_value=CoordinatedMatrix[
-          , which.min(abs(Offsets)), drop=TRUE
-        ]
-      )
-    }
-  ))
-  SafeCorrelation <- function(first, second, method){
-    Complete <- is.finite(first) & is.finite(second)
-    if(sum(Complete) < 3L ||
-       length(unique(first[Complete])) < 2L ||
-       length(unique(second[Complete])) < 2L){
-      return(NA_real_)
-    }
-    suppressWarnings(stats::cor(
-      first[Complete], second[Complete], method=method
-    ))
-  }
-  OriginCorrelationStatistics <- OriginRatioComparison[, .(
-    origins_compared=sum(
-      is.finite(primary_window_mean) & is.finite(coordinated_window_mean)
-    ),
-    pearson_r=SafeCorrelation(
-      primary_window_mean, coordinated_window_mean, "pearson"
-    ),
-    spearman_rho=SafeCorrelation(
-      primary_window_mean, coordinated_window_mean, "spearman"
-    )
-  ), by=timepoint]
-  OriginCorrelationStatistics[, timepoint_order := match(timepoint, TimePoints)]
-  data.table::setorder(OriginCorrelationStatistics, timepoint_order)
-  OriginCorrelationStatistics[, timepoint_order := NULL]
-
   AverageProfiles <- data.table::rbindlist(lapply(CenterSets, function(center_set){
     data.table::rbindlist(lapply(seq_len(NumberOfSamples), function(index){
       Matrix <- CenterMatrices[[center_set]][[index]]
@@ -16077,23 +15981,6 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
     CenterSummary, CenterSummaryFile,
     sep="\t", quote=FALSE, na="NA"
   )
-  OriginRatioComparisonFile <- file.path(
-    RatiosDir,
-    paste0(SeriesTag, "_Primary_vs_Coordinated_AllOrigins.tsv")
-  )
-  data.table::fwrite(
-    OriginRatioComparison, OriginRatioComparisonFile,
-    sep="\t", quote=FALSE, na="NA"
-  )
-  OriginCorrelationStatisticsFile <- file.path(
-    RatiosDir,
-    paste0(SeriesTag, "_Primary_vs_Coordinated_AllOrigins_Correlations.tsv")
-  )
-  data.table::fwrite(
-    OriginCorrelationStatistics, OriginCorrelationStatisticsFile,
-    sep="\t", quote=FALSE, na="NA"
-  )
-
   TimeColors <- viridisLite::viridis(
     NumberOfSamples, option="D", begin=0.08, end=0.92, direction=1
   )
@@ -16113,104 +16000,6 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
       paste0("log2(", MetricLabel, ")")
     }
   }
-
-  OriginCorrelationPDF <- file.path(
-    PlotsDir,
-    paste0(
-      SeriesTag, "_", Assay, "_", Alignment,
-      "_Primary_vs_Coordinated_AllOrigins_Correlation.pdf"
-    )
-  )
-  grDevices::pdf(OriginCorrelationPDF, width=10, height=8, useDingbats=FALSE)
-  PanelsPerCorrelationPage <- 4L
-  CorrelationBaseline <- if(Metric == "ip.score") 0 else 1
-  for(PageStart in seq.int(1L, NumberOfSamples, by=PanelsPerCorrelationPage)){
-    PageIndexes <- PageStart:min(
-      NumberOfSamples, PageStart+PanelsPerCorrelationPage-1L
-    )
-    PageLayout <- if(length(PageIndexes) == 1L){
-      c(1, 1)
-    } else if(length(PageIndexes) == 2L){
-      c(1, 2)
-    } else {
-      c(2, 2)
-    }
-    graphics::par(
-      mfrow=PageLayout, mar=c(4.3, 4.5, 3.0, 1.0),
-      oma=c(0.8, 0.8, 2.5, 0.5)
-    )
-    for(index in PageIndexes){
-      TargetTimePoint <- TimePoints[[index]]
-      Panel <- OriginRatioComparison[timepoint == TargetTimePoint]
-      X <- Panel$primary_window_mean
-      Y <- Panel$coordinated_window_mean
-      Complete <- is.finite(X) & is.finite(Y)
-      Stats <- OriginCorrelationStatistics[timepoint == TargetTimePoint]
-      if(sum(Complete) == 0L){
-        graphics::plot.new()
-        graphics::title(main=TargetTimePoint)
-        graphics::text(0.5, 0.5, "No finite origin pairs")
-        next
-      }
-      Limits <- range(c(X[Complete], Y[Complete], CorrelationBaseline), finite=TRUE)
-      Padding <- diff(Limits)*0.05
-      if(!is.finite(Padding) || Padding <= 0){
-        Padding <- max(0.1, abs(Limits[[1]])*0.05)
-      }
-      Limits <- Limits+c(-Padding, Padding)
-      graphics::plot(
-        X[Complete], Y[Complete],
-        xlim=Limits, ylim=Limits, xaxs="i", yaxs="i", las=1, bty="n",
-        pch=16, cex=0.62,
-        col=grDevices::adjustcolor(TimeColors[[index]], alpha.f=0.52),
-        xlab=paste0("Primary ", RawMetricLabel, " (origin-window mean)"),
-        ylab=paste0("Coordinated ", RawMetricLabel, " (origin-window mean)"),
-        main=TargetTimePoint, cex.main=1.0, cex.lab=0.86, cex.axis=0.82
-      )
-      graphics::abline(0, 1, col="gray45", lty=2, lwd=1.0)
-      if(sum(Complete) >= 3L && length(unique(X[Complete])) >= 2L){
-        Fit <- tryCatch(
-          stats::lm(Y[Complete] ~ X[Complete]),
-          error=function(error) NULL
-        )
-        if(!is.null(Fit)) graphics::abline(Fit, col=TimeColors[[index]], lwd=1.4)
-      }
-      graphics::legend(
-        "topleft",
-        legend=c(
-          paste0("n = ", Stats$origins_compared),
-          paste0("Pearson r = ", formatC(Stats$pearson_r, digits=3, format="f")),
-          paste0(
-            "Spearman rho = ",
-            formatC(Stats$spearman_rho, digits=3, format="f")
-          )
-        ),
-        bty="n", cex=0.75
-      )
-      graphics::box(col="gray45")
-    }
-    LayoutSlots <- prod(PageLayout)
-    if(length(PageIndexes) < LayoutSlots){
-      for(index in seq_len(LayoutSlots-length(PageIndexes))){
-        graphics::plot.new()
-      }
-    }
-    graphics::mtext(
-      paste0(
-        SeriesName, " | primary versus coordinated ratios at all confirmed origins"
-      ),
-      side=3, outer=TRUE, line=1.1, font=2, cex=1.0
-    )
-    graphics::mtext(
-      paste0(
-        Assay, " | ", Alignment, " | selected metric: ", Metric,
-        " | same origin coordinates and +/-", format(Window, big.mark=","),
-        "-bp windows"
-      ),
-      side=3, outer=TRUE, line=0.15, cex=0.72, col="gray35"
-    )
-  }
-  grDevices::dev.off()
 
   SafeSmooth <- function(x, y){
     Result <- rep(NA_real_, length(y))
@@ -16699,7 +16488,6 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
       "common_eligible_chunks", "center_sets", "metric", "window_bp",
       "genome_window_kb", "log2_values", "plot_style", "heatmap_order_by",
       "heatmap_order_description", "telomere_center_policy", "y_val",
-      "origin_correlation_table", "origin_correlation_pdf",
       "ratios_directory", "peaks_directory", "plots_directory"
     ),
     value=c(
@@ -16714,7 +16502,6 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
       Log2Values, PlotStyle, HeatmapOrderBy, HeatmapOrderDescription,
       "retained in centred reports; excluded only from background training",
       if(is.null(y_val)) "automatic" else y_val,
-      OriginRatioComparisonFile, OriginCorrelationPDF,
       RatiosDir, PeaksDir, PlotsDir
     )
   )
@@ -16734,13 +16521,10 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
     background_qc_table=BackgroundQCFile,
     average_profile_table=AverageProfileFile,
     center_time_series_table=CenterSummaryFile,
-    origin_ratio_comparison_table=OriginRatioComparisonFile,
-    origin_correlation_statistics_table=OriginCorrelationStatisticsFile,
     genomewide_pdf=GenomewidePDF,
     average_profile_pdf=AverageProfilePDF,
     heatmap_pdf=HeatmapPDF,
     background_qc_pdf=BackgroundQCPDF,
-    origin_correlation_pdf=OriginCorrelationPDF,
     sample_dirs=SampleDirs,
     time_points=TimePoints,
     assay=Assay,
@@ -16759,8 +16543,6 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
     problematic_centers_removed=RemovedCenterCounts,
     non_nuclear_or_rdna_centers_removed=RemovedCenterCounts,
     telomere_proximal_centers_retained=TRUE,
-    correlation_origin_count=nrow(CorrelationCenters),
-    origin_correlation_statistics=OriginCorrelationStatistics,
     metric=Metric,
     log2_values=Log2Values,
     plot_style=PlotStyle,

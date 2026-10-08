@@ -11,7 +11,6 @@ All notable changes to this project will be documented here.
 - Automatic background exclusion of common peaks buffered by 600 bp, `chrM`, chrXII rDNA and the terminal 15 kb of every nuclear chromosome.
 - New coordinated ratio tables, background QC, chronological average profiles, shared-order heatmaps and stacked genome-wide time-series profiles.
 - Union or reference-time-point common peak construction and shared curated-origin or calculated-peak centre sets.
-- Primary-versus-coordinated all-origin ratio tables, correlation statistics and scatterplot reports for every time point.
 
 ### Changed
 

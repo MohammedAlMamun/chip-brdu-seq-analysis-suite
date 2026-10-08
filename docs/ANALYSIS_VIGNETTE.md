@@ -952,8 +952,6 @@ The terminal 15-kb mask is used only for background training. Telomere-proximal 
 
 Average profiles always use smoothed lines with one chronological viridis gradient. For the stacked genome-wide PDF, `PlotStyle="lines"` draws smoothed curves and `PlotStyle="hist"` draws vertical histogram bars. Heatmaps keep the same coordinates, row order and colour limits in every time-point panel. By default, rows are sorted by decreasing final-time-point window-mean signal; `HeatmapOrderBy` can select another time point, activation-time grouping or genomic order. Values beyond the shared colour quantiles are saturated at the palette limits rather than rendered as missing. Series containing seven to ten samples wrap the heatmap panels into two rows of at most five time points. The genome-wide PDF uses one coordinate window per page, vertically stacks every time point with one shared y-axis, and places one common genomic-feature track below the stack.
 
-Every run also compares the selected untransformed metric from the original primary ratio tables with its coordinated counterpart at all confirmed origins. It writes per-origin primary and coordinated centre/window summaries, Pearson and Spearman statistics, and a multi-page scatterplot PDF. This makes the effect of coordinated background estimation directly auditable at each time point.
-
 ### Output organization
 
 ```text
@@ -967,15 +965,12 @@ SeriesName_TimeSeries/
 │   ├── one coordinated ratio BED per time point
 │   ├── background QC table
 │   ├── average-profile table
-│   ├── centre-by-time summary matrix
-│   ├── primary-versus-coordinated all-origin table
-│   └── all-origin correlation statistics
+│   └── centre-by-time summary matrix
 └── Plots/
-    ├── stacked genome-wide PDF
-    ├── average-profile PDF
-    ├── heatmap PDF
-    ├── background-QC PDF
-    └── primary-versus-coordinated all-origin correlation PDF
+    ├── stacked genome-wide PDF
+    ├── average-profile PDF
+    ├── heatmap PDF
+    └── background-QC PDF
 ```
 
 There are no heatmap-, profile-, or time-point-specific subfolders within these modality folders.
