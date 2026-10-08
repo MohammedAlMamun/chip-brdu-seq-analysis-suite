@@ -7614,6 +7614,17 @@ ChIP_BrDU_Genomic_Element_Boxplotter <- function(
   ComparisonPageHeight <- if(length(Elements) <= 2L) 7.2 else 10.0
   PdfWidth <- max(unname(ElementPageWidth), ComparisonPageWidth)
   PdfHeight <- max(unname(ElementPageHeight), ComparisonPageHeight)
+  DesiredComparisonWidth <- if(length(Elements) == 1L){
+    5.2
+  } else {
+    3.4+1.6*length(Elements)
+  }
+  ComparisonContentWidth <- min(
+    0.94*PdfWidth,
+    max(5.2, DesiredComparisonWidth)
+  )
+  ComparisonContentFraction <- ComparisonContentWidth/PdfWidth
+  ComparisonSideFraction <- (1-ComparisonContentFraction)/2
 
   grDevices::pdf(
     OutputFile,
@@ -8033,7 +8044,12 @@ ChIP_BrDU_Genomic_Element_Boxplotter <- function(
 
   if(length(Elements) > 2L){
     graphics::layout(
-      matrix(c(1, 2), nrow=2, byrow=TRUE),
+      matrix(c(0, 1, 0, 0, 2, 0), nrow=2, byrow=TRUE),
+      widths=c(
+        ComparisonSideFraction,
+        ComparisonContentFraction,
+        ComparisonSideFraction
+      ),
       heights=c(3.25, 1.45)
     )
     graphics::par(
@@ -8046,7 +8062,14 @@ ChIP_BrDU_Genomic_Element_Boxplotter <- function(
     graphics::par(mar=c(0.35, 0.85, 0.15, 0.85))
     PlotComparisonStatistics()
   } else {
-    graphics::layout(matrix(1L, nrow=1L, ncol=1L))
+    graphics::layout(
+      matrix(c(0, 1, 0), nrow=1L, ncol=3L),
+      widths=c(
+        ComparisonSideFraction,
+        ComparisonContentFraction,
+        ComparisonSideFraction
+      )
+    )
     graphics::par(
       oma=c(2.45, 0.85, 3.65, 0.65),
       mar=c(4.85, 4.55, 2.75, 1.05),
@@ -8093,6 +8116,8 @@ ChIP_BrDU_Genomic_Element_Boxplotter <- function(
     shared_coordinates=SharedCoordinates,
     comparison_statistics=ComparisonStatistics,
     comparison_pairwise_table_plotted=ComparisonPairwiseTablePlotted,
+    comparison_page_content_width=ComparisonContentWidth,
+    comparison_page_width=PdfWidth,
     excluded_annotations=c("ORF", "rDNA"),
     chromosomes=NuclearChromosomes,
     chrM_excluded=TRUE,

@@ -635,7 +635,7 @@ ChIP_BrDU_Early_Late_Enrichment_Plotter(
 
 ## 10. `ChIP_BrDU_Genomic_Element_Boxplotter()`
 
-Creates strand-collapsed per-element enrichment distributions for selected curated or peak cohorts. Standard pages keep cohorts separate by metric, while a final page places all selected cohorts side by side for one chosen comparison metric.
+Creates strand-collapsed per-element enrichment distributions for selected curated or peak cohorts. Standard pages keep cohorts separate by metric, while a final page places all selected cohorts side by side for one chosen comparison metric. The final comparison panel is centred and widens with the number of selected cohorts instead of stretching small comparisons across the full report page.
 
 ```r
 ChIP_BrDU_Genomic_Element_Boxplotter(

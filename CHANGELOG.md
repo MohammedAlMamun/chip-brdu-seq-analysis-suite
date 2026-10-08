@@ -26,6 +26,7 @@ All notable changes to this project will be documented here.
 ### Fixed
 
 - Primary analysis now retains its temporary origin-BED path variables until the registered exit cleanup runs, preventing a false `All_Ori_Link not found` error after successful completion.
+- The genomic-element boxplotter now centres its final comparison panel and scales its width with the number of selected cohorts instead of stretching two-box comparisons across the full report page.
 
 ## [1.0.0-rc1] - 2026-08-24
 
