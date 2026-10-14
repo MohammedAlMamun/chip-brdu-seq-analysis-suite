@@ -101,8 +101,9 @@ ChIP_BrDU_TimeSeries_Analysis(
   Alignment="generic",
   SeriesName="MCM_TimeCourse",
   PeakSet="union",
-  CenterSets=c("EarlyOrigin", "LateOrigin", "AllOrigins"),
+  OriginSet="AllOrigins",
   Metric="ratio.ipin.noise",
+  OriginRatio="mean",
   Window=3000,
   WindowSizeKb=50,
   Log2Values=FALSE,
@@ -113,4 +114,4 @@ ChIP_BrDU_TimeSeries_Analysis(
 )
 ```
 
-`PeakSet="union"` uses the merged peaks from all time points. To use the peaks from one supplied time point, choose `PeakSet="reference"` and set `ReferenceTimePoint` to its exact label. Average profiles are always smoothed lines. `PlotStyle="lines"` draws the stacked genome-wide profiles as curves; use `"hist"` for vertical histogram bars. `HeatmapOrderBy="last"` gives every heatmap panel one row order based on final-time-point signal; an exact time-point label, `"peak_time"`, or `"genomic"` can be used instead. Telomere-proximal centres remain in reports although terminal 15-kb regions remain excluded from background estimation. The function is strand-collapsed and intended for relative enrichment; the current version has no replicate model or external BED input.
+`PeakSet="union"` uses the merged peaks from all time points for coordinated background exclusion. To use the peaks from one supplied time point, choose `PeakSet="reference"` and set `ReferenceTimePoint` to its exact label. `OriginSet` selects one bundled/calculated origin group, or it may be the path to a custom BED/TSV origin or peak list. `OriginRatio="mean"` averages the selected binwise metric within each origin window. For direct compatibility with the old origin calculation, use `Metric="ratio.ipin"`, `OriginRatio="pooled"`, and `Window=500`; this calculates pooled ChIP/Input from bins fully contained in origin midpoint ±500 bp. `OriginRatio` affects only the origin table. Average profiles retain the established median across origins at every relative position and are spline-smoothed for display. `PlotStyle="lines"` draws the stacked genome-wide profiles as curves; use `"hist"` for vertical histogram bars. `HeatmapOrderBy="last"` gives every heatmap panel one row order based on final-time-point signal; an exact time-point label, `"peak_time"`, or `"genomic"` can be used instead. Telomere-proximal origins remain in reports although terminal 15-kb regions remain excluded from background estimation. The function is strand-collapsed, uses relative enrichment and currently has no replicate model.

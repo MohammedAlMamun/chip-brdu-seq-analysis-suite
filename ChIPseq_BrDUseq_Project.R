@@ -15146,12 +15146,22 @@ ChIP_BrDU_Enrichment_Comparison_Plotter <- function(
 ## reference such as a spike-in, changes must not be interpreted as absolute
 ## genome-wide occupancy changes.
 ##
-## CenterSets may contain EarlyOrigin, LateOrigin, AllOrigins, or any of the five
-## primary-analysis peak selectors. Peak-centred cohorts use the same union or
-## reference-time-point rule as the background mask. The terminal mask applies
-## only to background training: telomere-proximal nuclear centres remain in the
-## centred tables and plots, with unavailable chromosome-edge flanks recorded
-## as missing values. No external BED input is accepted in this first version.
+## OriginSet selects one origin cohort for the ratio table, average profile and
+## heatmaps. It may be EarlyOrigin, LateOrigin, AllOrigins, one of the five
+## primary-analysis peak selectors, or a BED/TSV path containing custom origin
+## or peak coordinates. Peak-centred cohorts use the same union or reference
+## time-point rule as the background mask. The terminal mask applies only to background
+## training: telomere-proximal nuclear origins remain in reports, with
+## unavailable chromosome-edge flanks recorded as missing values.
+##
+## OriginRatio="mean" averages the selected binwise Metric across each origin
+## window. OriginRatio="pooled" pools the underlying coverage components first.
+## In particular, Metric="ratio.ipin", OriginRatio="pooled", Window=500 uses
+## the original origin calculation: sum(ip.score)/sum(in.score) for coverage
+## bins fully contained within origin midpoint +/-500 bp, rounded to 3 decimals.
+## OriginRatio affects only the one-value-per-origin output table. The graphical
+## average profile retains the established median across origins at each offset,
+## followed by spline smoothing for display.
 ##
 ## HeatmapOrderBy="last" orders every time-point panel by decreasing window-mean
 ## signal at the final supplied time point. An exact TimePoints label selects a
@@ -15169,7 +15179,8 @@ ChIP_BrDU_Enrichment_Comparison_Plotter <- function(
 ##   Alignment="generic",
 ##   SeriesName="MCM_TimeCourse",
 ##   PeakSet="union",
-##   CenterSets=c("EarlyOrigin", "LateOrigin", "AllOrigins"),
+##   OriginSet="AllOrigins",
+##   OriginRatio="mean",
 ##   PlotStyle="lines",
 ##   HeatmapOrderBy="last"
 ## )
@@ -15181,8 +15192,9 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
     SeriesName="TimeSeries",
     PeakSet=c("union", "reference"),
     ReferenceTimePoint=NULL,
-    CenterSets=c("EarlyOrigin", "LateOrigin", "AllOrigins"),
+    OriginSet="AllOrigins",
     Metric=c("ratio.ipin.noise", "ratio.ipin", "ratio.ipnoise", "ip.score"),
+    OriginRatio=c("mean", "pooled"),
     Window=3000,
     WindowSizeKb=50,
     Log2Values=FALSE,
@@ -15208,6 +15220,7 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
   Alignment <- match.arg(Alignment)
   PeakSet <- match.arg(PeakSet)
   Metric <- match.arg(Metric)
+  OriginRatio <- match.arg(OriginRatio)
   PlotStyle <- match.arg(PlotStyle)
 
   ValidateText <- function(value, name){
@@ -15265,6 +15278,17 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
     )
   }
   TimePoints <- as.character(TimePoints)
+  ReservedOriginColumns <- c(
+    "origin_set", "origin_id", "origin_name", "chrom", "chromStart",
+    "chromEnd", "origin_midpoint"
+  )
+  if(any(TimePoints %in% ReservedOriginColumns)){
+    stop(
+      "TimePoints labels must not use reserved origin-table column names: ",
+      paste(ReservedOriginColumns, collapse=", "), ".",
+      call.=FALSE
+    )
+  }
   TimePointTags <- vapply(TimePoints, SanitizeName, character(1))
   if(any(!nzchar(TimePointTags)) || anyDuplicated(TimePointTags)){
     stop("TimePoints must remain unique after filename sanitization.", call.=FALSE)
@@ -15322,24 +15346,35 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
     y_val <- as.numeric(y_val)
   }
 
-  ValidCenterSets <- c(
+  ValidOriginSets <- c(
     "EarlyOrigin", "LateOrigin", "AllOrigins",
     "GenomewidePeaks", "NonOriginPeaks", "OriginPeaks",
     "EarlyOriginPeaks", "LateOriginPeaks"
   )
-  if(!is.character(CenterSets) || length(CenterSets) == 0L ||
-     anyNA(CenterSets) || any(!nzchar(CenterSets)) || anyDuplicated(CenterSets)){
-    stop("CenterSets must contain one or more unique supported selectors.", call.=FALSE)
-  }
-  InvalidCenterSets <- setdiff(CenterSets, ValidCenterSets)
-  if(length(InvalidCenterSets) > 0L){
+  OriginSet <- ValidateText(OriginSet, "OriginSet")
+  ExpandedOriginSet <- path.expand(OriginSet)
+  OriginSetIsFile <- file.exists(ExpandedOriginSet) && !dir.exists(ExpandedOriginSet)
+  if(OriginSetIsFile){
+    OriginSetFile <- normalizePath(
+      ExpandedOriginSet, winslash="/", mustWork=TRUE
+    )
+    OriginSetKey <- SanitizeName(tools::file_path_sans_ext(basename(OriginSetFile)))
+    if(!nzchar(OriginSetKey)) OriginSetKey <- "CustomOrigins"
+    OriginSetLabel <- tools::file_path_sans_ext(basename(OriginSetFile))
+  } else if(OriginSet %in% ValidOriginSets){
+    OriginSetFile <- NULL
+    OriginSetKey <- OriginSet
+    OriginSetLabel <- OriginSet
+  } else {
     stop(
-      "Unsupported CenterSets value(s): ",
-      paste(InvalidCenterSets, collapse=", "),
-      ". Supported values are: ", paste(ValidCenterSets, collapse=", "), ".",
+      "OriginSet must be one supported selector or an existing BED/TSV file. ",
+      "Supported selectors are: ", paste(ValidOriginSets, collapse=", "), ".",
       call.=FALSE
     )
   }
+  ## Keep the mature plotting machinery on a one-item internal collection while
+  ## exposing one clear biological origin set in the public call and outputs.
+  CenterSets <- OriginSetKey
 
   ReferenceIndex <- NA_integer_
   if(PeakSet == "reference"){
@@ -16062,6 +16097,9 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
   names(CoordinatedRatioFiles) <- TimePoints
 
   PrettyCenterSet <- function(center_set){
+    if(OriginSetIsFile && identical(center_set, OriginSetKey)){
+      return(OriginSetLabel)
+    }
     switch(
       center_set,
       EarlyOrigin="Early-firing origins",
@@ -16076,6 +16114,89 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
     )
   }
   ReadCuratedCenters <- function(center_set){
+    if(OriginSetIsFile && identical(center_set, OriginSetKey)){
+      FirstLine <- readLines(OriginSetFile, n=1L, warn=FALSE)
+      if(length(FirstLine) == 0L || !nzchar(trimws(FirstLine))){
+        stop("Custom OriginSet file is empty: ", OriginSetFile, call.=FALSE)
+      }
+      Fields <- strsplit(trimws(FirstLine), "[[:space:]]+")[[1]]
+      HasHeader <- length(Fields) >= 3L &&
+        (is.na(suppressWarnings(as.numeric(Fields[[2]]))) ||
+         is.na(suppressWarnings(as.numeric(Fields[[3]]))))
+      Elements <- data.table::fread(
+        OriginSetFile, header=HasHeader, sep="\t", showProgress=FALSE,
+        data.table=TRUE
+      )
+      if(ncol(Elements) < 3L){
+        stop(
+          "Custom OriginSet must contain chromosome, start and end columns: ",
+          OriginSetFile, call.=FALSE
+        )
+      }
+      if(HasHeader){
+        LowerNames <- tolower(names(Elements))
+        ChromColumn <- match(TRUE, LowerNames %in% c("chrom", "chr", "chromosome"))
+        StartColumn <- match(
+          TRUE, LowerNames %in% c("chromstart", "start", "peakstart")
+        )
+        EndColumn <- match(
+          TRUE, LowerNames %in% c("chromend", "end", "peakend")
+        )
+        SummitColumn <- match(TRUE, LowerNames %in% "peaksummit")
+        NameColumn <- match(
+          TRUE,
+          LowerNames %in% c("name", "origin", "ars", "feature", "id")
+        )
+      } else {
+        ChromColumn <- 1L
+        StartColumn <- 2L
+        EndColumn <- 3L
+        NameColumn <- if(ncol(Elements) >= 4L) 4L else NA_integer_
+        SummitColumn <- NA_integer_
+      }
+      if(any(is.na(c(ChromColumn, StartColumn, EndColumn)))){
+        stop(
+          "Custom OriginSet header must identify chromosome, start and end columns: ",
+          OriginSetFile, call.=FALSE
+        )
+      }
+      Result <- data.table::data.table(
+        chrom=as.character(Elements[[ChromColumn]]),
+        chromStart=as.numeric(Elements[[StartColumn]]),
+        chromEnd=as.numeric(Elements[[EndColumn]]),
+        center_name=if(is.na(NameColumn)){
+          paste0(OriginSetKey, "_", seq_len(nrow(Elements)))
+        } else {
+          as.character(Elements[[NameColumn]])
+        }
+      )
+      Invalid <- !nzchar(Result$chrom) |
+        !is.finite(Result$chromStart) | !is.finite(Result$chromEnd) |
+        Result$chromEnd <= Result$chromStart
+      if(any(Invalid)){
+        stop(
+          "Custom OriginSet contains invalid chromosome/start/end rows: ",
+          OriginSetFile, call.=FALSE
+        )
+      }
+      MissingNames <- is.na(Result$center_name) | !nzchar(Result$center_name)
+      Result$center_name[MissingNames] <- paste0(
+        OriginSetKey, "_", which(MissingNames)
+      )
+      Result[, center := if(is.na(SummitColumn)){
+        round((chromStart+chromEnd)/2)
+      } else {
+        round(as.numeric(Elements[[SummitColumn]]))
+      }]
+      if(any(!is.finite(Result$center)) ||
+         any(Result$center < Result$chromStart | Result$center > Result$chromEnd)){
+        stop(
+          "Custom OriginSet contains an invalid peakSummit value: ",
+          OriginSetFile, call.=FALSE
+        )
+      }
+      return(Result)
+    }
     File <- switch(
       center_set,
       EarlyOrigin=ProjectPaths$elements$early_origins,
@@ -16099,7 +16220,7 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
       chromStart=as.numeric(chromStart),
       chromEnd=as.numeric(chromEnd),
       center_name=as.character(name),
-      center=(as.numeric(chromStart)+as.numeric(chromEnd))/2
+      center=round((as.numeric(chromStart)+as.numeric(chromEnd))/2)
     )]
   }
   ProblematicCenter <- function(chrom, center){
@@ -16110,7 +16231,7 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
   CenterTables <- setNames(vector("list", length(CenterSets)), CenterSets)
   RemovedCenterCounts <- setNames(integer(length(CenterSets)), CenterSets)
   for(center_set in CenterSets){
-    if(center_set %in% names(PeakClassMap)){
+    if(!OriginSetIsFile && center_set %in% names(PeakClassMap)){
       PrimaryClass <- unname(PeakClassMap[[center_set]])
       CommonClass <- BuildCommonPeaks(PrimaryClass)
       CommonClassFile <- file.path(
@@ -16205,7 +16326,7 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
     data.table::rbindlist(lapply(seq_len(NumberOfSamples), function(index){
       Matrix <- CenterMatrices[[center_set]][[index]]
       data.table::data.table(
-        center_set=center_set,
+        origin_set=PrettyCenterSet(center_set),
         timepoint=TimePoints[[index]],
         offset=Offsets,
         median_enrichment=apply(Matrix, 2L, MedianOrNA),
@@ -16222,32 +16343,110 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
     sep="\t", quote=FALSE, na="NA"
   )
 
-  CenterSummary <- data.table::rbindlist(lapply(CenterSets, function(center_set){
-    Centers <- CenterTables[[center_set]]
-    Tables <- lapply(seq_len(NumberOfSamples), function(index){
-      Matrix <- CenterMatrices[[center_set]][[index]]
-      data.table::data.table(
-        center_set=center_set,
-        center_id=Centers$center_id,
-        center_name=Centers$center_name,
-        chrom=Centers$chrom,
-        chromStart=Centers$chromStart,
-        chromEnd=Centers$chromEnd,
-        center=Centers$center,
-        timepoint=TimePoints[[index]],
-        window_median=apply(Matrix, 1L, MedianOrNA),
-        window_mean=apply(Matrix, 1L, MeanOrNA),
-        center_value=Matrix[, which.min(abs(Offsets)), drop=TRUE]
+  PooledRatio <- function(numerator, denominator){
+    Numerator <- sum(numerator[is.finite(numerator)], na.rm=TRUE)
+    Denominator <- sum(denominator[is.finite(denominator)], na.rm=TRUE)
+    if(!is.finite(Denominator) || Denominator <= 0) return(NA_real_)
+    Numerator/Denominator
+  }
+  CalculateOriginRatio <- function(Table, Origin){
+    WindowTable <- Table[
+      chrom == Origin$chrom &
+        chromStart >= Origin$center-Window &
+        chromEnd <= Origin$center+Window
+    ]
+    if(nrow(WindowTable) == 0L){
+      if(OriginRatio == "pooled" && Metric == "ratio.ipin") return(0)
+      return(NA_real_)
+    }
+    if(OriginRatio == "mean"){
+      return(MeanOrNA(WindowTable[[Metric]]))
+    }
+    switch(
+      Metric,
+      ratio.ipin={
+        Value <- PooledRatio(WindowTable$ip.score, WindowTable$in.score)
+        if(is.finite(Value)) Value else 0
+      },
+      ratio.ipnoise=PooledRatio(WindowTable$ip.score, WindowTable$ip.noise),
+      ratio.ipin.noise={
+        AssayOverNoise <- PooledRatio(WindowTable$ip.score, WindowTable$ip.noise)
+        InputOverNoise <- PooledRatio(WindowTable$in.score, WindowTable$in.noise)
+        if(!is.finite(AssayOverNoise) || !is.finite(InputOverNoise) ||
+           InputOverNoise <= 0){
+          NA_real_
+        } else {
+          AssayOverNoise/InputOverNoise
+        }
+      },
+      ip.score=sum(WindowTable$ip.score[is.finite(WindowTable$ip.score)], na.rm=TRUE)
+    )
+  }
+
+  SelectedCenters <- CenterTables[[OriginSetKey]]
+  OriginSummary <- SelectedCenters[, .(
+    origin_set=PrettyCenterSet(OriginSetKey),
+    origin_id=center_id,
+    origin_name=center_name,
+    chrom,
+    chromStart,
+    chromEnd,
+    origin_midpoint=center
+  )]
+  OriginRatioDigits <- if(
+    OriginRatio == "pooled" && Metric == "ratio.ipin"
+  ) 3L else 4L
+  for(index in seq_len(NumberOfSamples)){
+    OriginMetricTable <- data.table::fread(
+      CoordinatedRatioFiles[[index]], header=TRUE, sep="\t",
+      select=c(
+        "chrom", "chromStart", "chromEnd", "ip.score", "in.score",
+        "ip.noise", "in.noise", "ratio.ipin", "ratio.ipnoise",
+        "ratio.ipin.noise"
+      ),
+      showProgress=FALSE, data.table=TRUE
+    )
+    OriginMetricTable[, `:=`(
+      chrom=as.character(chrom),
+      chromStart=as.numeric(chromStart),
+      chromEnd=as.numeric(chromEnd)
+    )]
+    OriginNumericColumns <- setdiff(names(OriginMetricTable), c(
+      "chrom", "chromStart", "chromEnd"
+    ))
+    OriginMetricTable[, (OriginNumericColumns) := lapply(
+      .SD, as.numeric
+    ), .SDcols=OriginNumericColumns]
+    OriginMetricTable <- OriginMetricTable[chrom %in% NuclearChromosomes]
+    data.table::setorder(OriginMetricTable, chrom, chromStart)
+    Values <- rep(NA_real_, nrow(SelectedCenters))
+    for(chromosome in unique(SelectedCenters$chrom)){
+      OriginIndexes <- which(SelectedCenters$chrom == chromosome)
+      ChromosomeMetricTable <- OriginMetricTable[chrom == chromosome]
+      Values[OriginIndexes] <- vapply(
+        OriginIndexes,
+        function(origin_index){
+          CalculateOriginRatio(
+            ChromosomeMetricTable, SelectedCenters[origin_index]
+          )
+        },
+        numeric(1)
       )
-    })
-    data.table::rbindlist(Tables)
-  }))
-  CenterSummaryFile <- file.path(
+      rm(ChromosomeMetricTable, OriginIndexes)
+    }
+    OriginSummary[, (TimePoints[[index]]) := round(Values, OriginRatioDigits)]
+    rm(OriginMetricTable, OriginNumericColumns, Values)
+    gc(verbose=FALSE)
+  }
+  OriginSummaryFile <- file.path(
     RatiosDir,
-    paste0(SeriesTag, "_Center_TimeSeries_Matrix.tsv")
+    paste0(
+      SeriesTag, "_", OriginSetKey, "_", Metric, "_", OriginRatio,
+      "_Origin_TimeSeries_Ratios.tsv"
+    )
   )
   data.table::fwrite(
-    CenterSummary, CenterSummaryFile,
+    OriginSummary, OriginSummaryFile,
     sep="\t", quote=FALSE, na="NA"
   )
   TimeColors <- viridisLite::viridis(
@@ -16323,15 +16522,15 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
   )
   grDevices::pdf(AverageProfilePDF, width=10, height=7.5, useDingbats=FALSE)
   for(center_set in CenterSets){
-    TargetCenterSet <- center_set
-    Page <- AverageProfiles[center_set == TargetCenterSet]
+    TargetOriginSet <- PrettyCenterSet(center_set)
+    Page <- AverageProfiles[origin_set == TargetOriginSet]
     PageValues <- Page$median_enrichment
     YLim <- CalculateYLimits(PageValues)
     graphics::par(mar=c(5.0, 5.2, 3.8, 1.5), oma=c(0.6, 0.5, 1.2, 0.5))
     graphics::plot(
       NA, xlim=c(-Window, Window)/1000, ylim=YLim,
       xaxs="i", yaxs="i", las=1, bty="n",
-      xlab=if(center_set %in% names(PeakClassMap)){
+      xlab=if(!OriginSetIsFile && center_set %in% names(PeakClassMap)){
         "Distance from common peak summit (kb)"
       } else {
         "Distance from origin midpoint (kb)"
@@ -16754,9 +16953,10 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
       "sample_directories", "strand_mode", "interpretation", "peak_set",
       "reference_timepoint", "peak_buffer_bp", "background_chunk_bp",
       "telomere_mask_bp", "rdna_mask", "common_candidate_chunks",
-      "common_eligible_chunks", "center_sets", "metric", "window_bp",
+      "common_eligible_chunks", "origin_set", "origin_set_source",
+      "metric", "origin_ratio", "window_bp",
       "genome_window_kb", "log2_values", "plot_style", "heatmap_order_by",
-      "heatmap_order_description", "telomere_center_policy", "y_val",
+      "heatmap_order_description", "telomere_origin_policy", "y_val",
       "ratios_directory", "peaks_directory", "plots_directory"
     ),
     value=c(
@@ -16767,9 +16967,11 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
       PeakBufferBp, BackgroundChunkBp, TelomereMaskBp,
       paste0(rDNAChromosome, ":", rDNAStart, "-", rDNAEnd),
       nrow(CandidateChunks), nrow(BackgroundChunks),
-      paste(CenterSets, collapse=";"), Metric, Window, WindowSizeKb,
+      PrettyCenterSet(OriginSetKey),
+      if(OriginSetIsFile) OriginSetFile else "bundled_or_calculated",
+      Metric, OriginRatio, Window, WindowSizeKb,
       Log2Values, PlotStyle, HeatmapOrderBy, HeatmapOrderDescription,
-      "retained in centred reports; excluded only from background training",
+      "retained in origin reports; excluded only from background training",
       if(is.null(y_val)) "automatic" else y_val,
       RatiosDir, PeaksDir, PlotsDir
     )
@@ -16789,7 +16991,7 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
     background_chunks_file=BackgroundChunksFile,
     background_qc_table=BackgroundQCFile,
     average_profile_table=AverageProfileFile,
-    center_time_series_table=CenterSummaryFile,
+    origin_time_series_table=OriginSummaryFile,
     genomewide_pdf=GenomewidePDF,
     average_profile_pdf=AverageProfilePDF,
     heatmap_pdf=HeatmapPDF,
@@ -16807,12 +17009,14 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
     rdna_mask=c(chrom=rDNAChromosome, start=rDNAStart, end=rDNAEnd),
     candidate_background_chunks=nrow(CandidateChunks),
     eligible_background_chunks=nrow(BackgroundChunks),
-    center_sets=CenterSets,
-    center_counts=vapply(CenterTables, nrow, integer(1)),
-    problematic_centers_removed=RemovedCenterCounts,
-    non_nuclear_or_rdna_centers_removed=RemovedCenterCounts,
-    telomere_proximal_centers_retained=TRUE,
+    origin_set=PrettyCenterSet(OriginSetKey),
+    origin_set_file=if(OriginSetIsFile) OriginSetFile else NULL,
+    origin_count=nrow(SelectedCenters),
+    problematic_origins_removed=unname(RemovedCenterCounts[[OriginSetKey]]),
+    non_nuclear_or_rdna_origins_removed=unname(RemovedCenterCounts[[OriginSetKey]]),
+    telomere_proximal_origins_retained=TRUE,
     metric=Metric,
+    origin_ratio=OriginRatio,
     log2_values=Log2Values,
     plot_style=PlotStyle,
     heatmap_order_by=HeatmapOrderBy,
@@ -16823,7 +17027,7 @@ ChIP_BrDU_TimeSeries_Analysis <- function(
     interpretation="relative enrichment; no absolute occupancy inference",
     primary_outputs_overwritten=FALSE,
     replicate_model=FALSE,
-    external_bed_input=FALSE
+    custom_origin_file=OriginSetIsFile
   ))
 }
 
